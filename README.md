@@ -24,7 +24,7 @@ hasher.stable_transform(words = "foo bar bar",log=True,standardize=True)
 If counts are already computed, word and count vectors can be passed separately.
 
 ```python
-hasher.stable_transform(words = ["foo","bar"],counts = [1,2[,log=True,standardize=True)
+hasher.stable_transform(words = ["foo","bar"],counts = [1,2],log=True,standardize=True)
 ```
 
 It's worth using 'standardize'
