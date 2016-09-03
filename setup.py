@@ -27,5 +27,5 @@ setup(name='SRP',
         "Topic :: Text Processing :: Indexing",
         "Topic :: Text Processing :: Linguistic"
         ],
-      install_requires= ["numpy"]
+      install_requires= ["numpy", "regex"]
 )

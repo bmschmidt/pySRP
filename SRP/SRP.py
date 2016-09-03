@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+#### -*- coding: utf-8 -*-
 # This code should run under either 2.7 or 3.x
 
 from __future__ import absolute_import, division, print_function, unicode_literals
@@ -34,8 +34,16 @@ class SRP(object):
         if cache:
             # This is the actual hash.
             self.known_hashes = dict()
-
-
+    
+    def _expand_hexstring(self, hexstring):
+        if py3 and isinstance(hexstring,str):
+            h = bytes.fromhex(hexstring)
+        elif py2:
+            h = hexstring.decode('hex')
+        ints = np.fromstring(h, np.uint8)
+        value = np.unpackbits(ints).astype(np.int8)
+        value[value == 0] = -1
+        return value
         
     def hash_string(self,string,dim=None):
         """
@@ -59,23 +67,16 @@ class SRP(object):
                 cache = True
         else:
             cache = False
-
-        if dim > 160:
-            # For longer than 160, we keep recursing and adding underscore characters to the end.
-            # Caching is disabled b/c the subsets should not be useful.
-            start = self.hash_string(string,dim=160)
-            try:
-                nextbit = string + "_"
-            except UnicodeDecodeError:
-                # Maybe someone has passed in already-encoded unicode.
-                nextbit = string.decode("utf-8") + "_"
-            remainder = self.hash_string(nextbit,dim = dim-160)
+            
                 
-            value = np.concatenate((start,remainder))
-
-        if dim < 160:
-            start = self.hash_string(string,dim=160)
-            value = start[:dim]
+        expand = np.ceil(dim / 160).astype('i8')
+        full_hash = ""
+        for i in range(0,expand):
+            seedword = string + "_"*i
+            try:
+                full_hash += hashlib.sha1(seedword.encode("utf-8")).hexdigest()
+            except UnicodeDecodeError:
+                full_hash += hashlib.sha1(seedword).hexdigest()
 
         """
         Do some ugly typecasting
@@ -90,14 +91,8 @@ class SRP(object):
             if isinstance(string,bytes):
                 pass# string = string.decode("utf-8")
 
-        if dim==160:
-            # This is where it actually happens.
-            try:
-                hashed = hashlib.sha1(string.encode("utf-8")).hexdigest()
-            except UnicodeDecodeError:
-                hashed = hashlib.sha1(string).hexdigest()
-            binary = str(bin(int(hashed, 16))[2:].zfill(160))
-            value = np.array([-1 if i=="0" else 1 for i in binary],np.float)
+        value = self._expand_hexstring(full_hash)[:dim]
+        
         if cache:
             self.known_hashes[string] = value
         return value
@@ -169,8 +164,9 @@ class SRP(object):
             # This lets us avoid negatives, which would screw things up.
             # Once per 100,000 is an arbitrary floor, obv.
             counts.clip(0)
-        wordhashes = [self.hash_string(word,dim=dim) for word in words]
-        scores = np.array(wordhashes,np.float)
+        scores = np.zeros((len(words), dim), dtype=np.int8)
+        for i, word in enumerate(words):
+            scores[i] = self.hash_string(word, dim=dim)
         values = np.dot(counts,scores)
         return values
     
@@ -181,7 +177,7 @@ class SRP(object):
         """
         string = np.array(vector,'<f4')
         return base64.b64encode(string)
-        
+
 if __name__=="__main__":
     model = SRP(320)
     print(model.stable_transform("hello world")[:6])
@@ -192,4 +188,3 @@ if __name__=="__main__":
     model = SRP(320)
     print(model.stable_transform(u"Güten Tag".encode("utf-8"))[:6])
     #print model.stable_transform(["hello", "world"],[1,1])[:6]
-
