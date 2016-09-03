@@ -1,34 +1,62 @@
-# -*- coding: utf-8 -*-
+#### -*- coding: utf-8 -*-
 
 import SRP
 import numpy as np
 import unittest
 
+
+
 class Bookworm_SQL_Creation(unittest.TestCase):
     def test_ascii(self):
         hasher = SRP.SRP(6)
+        hello_world = hasher.stable_transform("hello world", log=False)
+
         self.assertEqual(
-            hasher.stable_transform("hello world", log=False).tolist(),
+            hello_world.tolist(),
             np.array([0.,  0.,  2.,  0.,  2.,  0.]).tolist()
             )
 
-    def wordcounts_unicode(self):
+    def test_wordcounts_unicode(self):
         hasher = SRP.SRP(160)
-        
-        wordcount_style = hasher.stable_tranform(
+
+        wordcount_style = hasher.stable_transform(
             words = [u"Güten",u"Tag"],
             counts = [1,1],
             log=False
-        )
+        ).tolist()
 
-        string_style = hash.stable_transform(
+        string_style = hasher.stable_transform(
             words =  u"Güten Tag",
             log=False
-        )
-
+        ).tolist()
+    
         self.assertEqual(wordcount_style,string_style)
         
+    def test_ascii_equals_unicode(self):
+        hasher = SRP.SRP(160)
+        
+        hello_world = hasher.stable_transform("hello world", log=False).tolist()
+        hello_world_unicode = hasher.stable_transform(u"hello world", log=False).tolist()
+        
+        self.assertEqual(hello_world,hello_world_unicode)
+
+    def test_logs_are_plausible(self):
+        log_unit = np.log(1e05)
+
+        hasher = SRP.SRP(20)
+        log_srp = hasher.stable_transform("hello", log=True)
+        nonlog_srp = hasher.stable_transform("hello", log=False)
+        difference = sum(log_srp - (nonlog_srp) * log_unit)
+        
+        # Forgive floating point error.
+        self.assertTrue(difference < 1e-05)
+        
     def test_unicode(self):
+        """
+        One of the goals is be able to pass *either* encoded or decoded
+        utf-8, because that tends to happen.
+
+        """
         hasher = SRP.SRP(6)
         guten = u"Güten Tag"
         gutenhash = np.array([0., 2., -2., 0., 2.,0.]).tolist()
