@@ -5,8 +5,41 @@ import numpy as np
 import unittest
 
 
+class ReadAndWrite(unittest.TestCase):
+    array1 = np.array([1,2,3],'<f4')
+    array2 = np.array([3,2,1],'<f4')
+    test_set = [("foo",array1),
+                ("foo2",array1),
+                ("bar",array2),
+                ("stop",array2)]
+        
 
-class Bookworm_SQL_Creation(unittest.TestCase):
+    def test_creation_and_reading(self):
+        testfile = SRP.Vector_file("test.bin", dims=3, mode="w")
+        for row in self.test_set:
+            if row[0] == "stop":
+                continue
+            testfile.add_row(row[0],row[1])
+
+        self.assertTrue(testfile.nrows==3)
+        testfile.close()
+
+        testfile = SRP.Vector_file("test.bin", dims=3, mode="a")
+        testfile.add_row(*self.test_set[3])
+        foo = SRP.Vector_file("test.bin")
+        read_in_values = dict()
+        for (i,(name,array)) in enumerate(foo):
+            read_in_values[name] = array
+
+            (comp_name,comp_array) = self.test_set[i]
+            self.assertEqual(comp_name,name)
+            self.assertEqual(array.tolist(),comp_array.tolist())            
+
+        self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
+        self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["bar"].tolist())
+
+
+class BasicHashing(unittest.TestCase):
     def test_ascii(self):
         hasher = SRP.SRP(6)
         hello_world = hasher.stable_transform("hello world", log=False)
@@ -81,6 +114,6 @@ class Bookworm_SQL_Creation(unittest.TestCase):
         manually_tokenized = ["Gravity","s","RAINBOW"]
         hashed_manually_tokenized = hasher.stable_transform(manually_tokenized, [1, 1, 1], log=False,standardize=True)
         self.assertEqual(hashed_manually_tokenized.tolist(), hashed_standardized.tolist())
-      
+
 if __name__=="__main__":
     unittest.main()
