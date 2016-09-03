@@ -33,15 +33,26 @@ class Bookworm_SQL_Creation(unittest.TestCase):
         guten = u"Güten Tag"
         gutenhash = np.array([0., 2., -2., 0., 2.,0.]).tolist()
 
-        basic = hasher.stable_transform(guten).tolist()
+        basic = hasher.stable_transform(guten, log=False).tolist()
         self.assertTrue(basic == gutenhash)
 
-        encoded = hasher.stable_transform(guten.encode("utf-8"),log=False).tolist()
+        encoded = hasher.stable_transform(guten.encode("utf-8"), log=False).tolist()
         self.assertTrue(encoded == gutenhash)
 
         decoded = hasher.stable_transform(guten.encode("utf-8").decode("utf-8"),log=False).tolist()
         self.assertTrue(decoded == gutenhash)
 
-        
+    def test_standardization(self):
+        """
+        standardization does case normalization,
+        and tokenizes by a charater regex.
+        """
+        hasher = SRP.SRP(6)
+        string1 = "Gravity's rainbow"
+        hashed_standardized = hasher.stable_transform(string1, log=False, standardize=True)
+        manually_tokenized = ["Gravity","s","RAINBOW"]
+        hashed_manually_tokenized = hasher.stable_transform(manually_tokenized, [1, 1, 1], log=False,standardize=True)
+        self.assertEqual(hashed_manually_tokenized.tolist(), hashed_standardized.tolist())
+      
 if __name__=="__main__":
     unittest.main()
