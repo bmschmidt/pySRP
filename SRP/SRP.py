@@ -44,7 +44,7 @@ class SRP(object):
         value = np.unpackbits(ints).astype(np.int8)
         value[value == 0] = -1
         return value
-        
+    
     def hash_string(self,string,dim=None):
         """
         Gives a hash for a word.
@@ -52,7 +52,6 @@ class SRP(object):
         dim:         The number of dimensions to hash into.
                      Caching occurs when this dim is the class's
                      number of dimensions.
-
         """
         # First we check if the cache ought to contain the
         # results; if so, we either return the result, or
@@ -67,8 +66,7 @@ class SRP(object):
                 cache = True
         else:
             cache = False
-            
-                
+
         expand = np.ceil(dim / 160).astype('i8')
         full_hash = ""
         for i in range(0,expand):
@@ -81,7 +79,7 @@ class SRP(object):
         """
         Do some ugly typecasting
         """
-        
+
         if py2:
             if isinstance(string,unicode):
                 pass# string = string.encode("utf-8")
@@ -169,7 +167,7 @@ class SRP(object):
             scores[i] = self.hash_string(word, dim=dim)
         values = np.dot(counts,scores)
         return values
-    
+
     def to_base64(self,vector):
         """
         Converts a vector to a base64, little-endian, 4-byte representation
