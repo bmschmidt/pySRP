@@ -21,7 +21,7 @@ class SRP(object):
     A factory to perform random transformations.
     """
 
-    def __init__(self,dim=160,cache=True):
+    def __init__(self,dim=640,cache=True):
         """
         dim:     The number of dimensions that the transformer
                  should reduce to.
