@@ -14,6 +14,7 @@ if sys.version_info[0]==3:
 else:
     (py2,py3) = True,False
 
+tokenregex = re.compile(u"(\p{L}+|\p{N}+)")
 
 class SRP(object):
     """
@@ -95,7 +96,7 @@ class SRP(object):
             self.known_hashes[string] = value
         return value
 
-    def tokenize(self,string,regex=u"(\p{L}+|\p{N}+)"):
+    def tokenize(self,string,regex=tokenregex):
         if py3 and isinstance(string,bytes):
             string = string.decode("utf-8")
         if py2 and not isinstance(string,unicode):
@@ -108,7 +109,7 @@ class SRP(object):
                     sys.stderr.write("Encountered non-unicode string" + "\n")
                     string = string.decode("utf-8","ignore")
         count = dict()
-        parts = re.findall(regex,string)
+        parts = regex.findall(string)
         for part in parts:
             part = part.lower()
             try:
@@ -126,13 +127,17 @@ class SRP(object):
             by passing words = [string], counts=[1]
             """
             subCounts = self.tokenize(string)
-            for (part,partCounts) in subCounts.items():
+            for (part,partCounts) in subCounts.iteritems():
                 try:
                     full[part] += count*partCounts
                 except KeyError:
                     full[part] = count*partCounts
-        newvals = [(k,v) for k,v in full.items()]
-        return zip(*newvals)
+        words = []
+        counts = []
+        for (k,v) in full.iteritems():
+            words.append(k)
+            counts.append(v)
+        return (words,counts)
 
     def stable_transform(self,words,counts=None,dim=None,log=False,standardize=True):
         """
@@ -153,7 +158,7 @@ class SRP(object):
             raise IOError("Counts must be defined when a list of words is passed in.")
         if standardize:
             (words,counts) = self.standardize(words,counts)
-        counts = np.array(counts,dtype=np.float)
+        counts = np.array(counts,dtype=np.float32)
         if log:
             # Store as a float because of normalization, etc.
             counts = counts/np.sum(counts)
