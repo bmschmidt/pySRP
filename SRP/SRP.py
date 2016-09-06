@@ -21,7 +21,7 @@ class SRP(object):
     A factory to perform random transformations.
     """
 
-    def __init__(self,dim=640,cache=True):
+    def __init__(self, dim=640, cache=True, cache_limit=500000):
         """
         dim:     The number of dimensions that the transformer
                  should reduce to.
@@ -32,9 +32,13 @@ class SRP(object):
         """
         self.dim=dim
         self.cache=cache
+        self.cache_limit = cache_limit
         if cache:
             # This is the actual hash.
             self.known_hashes = dict()
+
+    def _cache_size(self):
+        return len(self.known_hashes)
     
     def _expand_hexstring(self, hexstring):
         if py3 and isinstance(hexstring,str):
@@ -91,8 +95,8 @@ class SRP(object):
                 pass# string = string.decode("utf-8")
 
         value = self._expand_hexstring(full_hash)[:dim]
-        
-        if cache:
+ 
+        if cache and self._cache_size() < self.cache_limit:
             self.known_hashes[string] = value
         return value
 
