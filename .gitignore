@@ -82,4 +82,5 @@ venv/
 ENV/
 
 # Spyder project settings
-.spyderproject
+.spyderprojecttests/
+test.bin
