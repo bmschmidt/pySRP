@@ -120,18 +120,20 @@ class SRP(object):
 
     def standardize(self,words,counts):
         full = dict()
-        for (string,count) in zip(words,counts):
+        
+        for i in range(len(words)):
             """
             Here we retokenize each token. A full text can be tokenized
             at a single pass
             by passing words = [string], counts=[1]
             """
-            subCounts = self.tokenize(string)
+            subCounts = self.tokenize(words[i])
             for (part,partCounts) in subCounts.iteritems():
+                addition = counts[i]*partCounts
                 try:
-                    full[part] += count*partCounts
+                    full[part] += addition
                 except KeyError:
-                    full[part] = count*partCounts
+                    full[part] = addition
         words = []
         counts = []
         for (k,v) in full.iteritems():
