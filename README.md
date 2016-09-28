@@ -1,5 +1,5 @@
 # pySRP
-Python Module implementing SRP
+Python Module implementing Stable Random Projection.
 
 Note: Pre-alpha. The API is still unstable.
 
@@ -13,9 +13,9 @@ hasher = SRP.SRP(640)
 
 ```
 
-The most important argument is 'stable_transform'.
+The most important method is 'stable_transform'.
 
-This can hash strings
+This can tokenize and then compute the SRP.
 
 ```python
 hasher.stable_transform(words = "foo bar bar",log=True,standardize=True)
@@ -46,4 +46,18 @@ for (key,vector) in file:
 
 ### Writing to SRP files
 
-Not yet formally implemented.
+```python
+
+# Note--the dimensions of the file and the hasher should be equal.
+
+output = SRP.SRP_file("new_vectors.bin",dims=640,mode="w")
+hasher = SRP.SRP(640)
+
+
+for filename in [a,b,c,d]:
+  hash = hasher.stable_transform(" ".join(open(filename).readlines()))
+  output.add_row(filename,hash)
+  
+
+
+```
