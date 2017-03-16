@@ -4,9 +4,10 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import hashlib
 import numpy as np
-import regex as re
+import regex
 import sys
 import base64
+from collections import Counter
 
 if sys.version_info[0]==3:
     py2,py3 = False,True
@@ -14,7 +15,7 @@ if sys.version_info[0]==3:
 else:
     (py2,py3) = True,False
 
-tokenregex = re.compile(u"(\p{L}+|\p{N}+)")
+tokenregex = regex.compile(u"\w+")
 
 class SRP(object):
     """
@@ -26,9 +27,14 @@ class SRP(object):
         dim:     The number of dimensions that the transformer
                  should reduce to.
 
-        cache:   Whether to memoize This could cause memory overflows in
+        cache:   Whether to memoize some words. This could cause memory overflows in
                  extremely large document sets that have not had their
-                 vocabulary culled down to a few million unique tokens.
+                 vocabulary culled down to a few million unique tokens if cache_limit
+                 is not set. When it is set, the cache stops marking items once it has
+                 cach_limit items in it already: this should catch most common words, but
+                 does nothing to ensure that the first n words it catches are useful.
+
+        cache_limit: The maximum cache size.  
         """
         self.dim=dim
         self.cache=cache
@@ -39,7 +45,7 @@ class SRP(object):
 
     def _cache_size(self):
         return len(self.known_hashes)
-    
+
     def _expand_hexstring(self, hexstring):
         if py3 and isinstance(hexstring,str):
             h = bytes.fromhex(hexstring)
@@ -49,7 +55,7 @@ class SRP(object):
         value = np.unpackbits(ints).astype(np.int8)
         value[value == 0] = -1
         return value
-    
+
     def hash_string(self,string,dim=None):
         """
         Gives a hash for a word.
@@ -178,7 +184,23 @@ class SRP(object):
             scores[i] = self.hash_string(word, dim=dim)
         values = np.dot(counts,scores)
         return values
+    
+    def hash_all_substrings(self, string):
+        """
+        Breaks a string down into all possible substrings, and then
+        returns the projection of the string in the space
+        defined by them.
 
+        Possibly useful as a vector-space approximation of string distance.
+        """
+        counter = Counter()
+        
+        for i in xrange(len(string)):
+            for j in xrange(i + 1, len(string) + 1):
+                counter[string[i:j]] += 1
+
+        return self.stable_transform(counter.keys(), counts = counter.values(), log = False, standardize = False)
+    
     def to_base64(self,vector):
         """
         Converts a vector to a base64, little-endian, 4-byte representation
