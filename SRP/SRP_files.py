@@ -71,12 +71,34 @@ class Vector_file(object):
         self.mode = mode
         self.max_rows = max_rows
         if self.mode == "r":
-            self._preload_metadata()
+            self._open_for_reading()
         if self.mode == "w":
             self._open_for_writing()
         if self.mode == "a":
             self._open_for_appending()
 
+    def repair_file(self):
+        if self.mode != "a":
+            raise IOError("Can only repair when in append mode")
+        self._preload_metadata()
+        # This also sets the pointer to the front.
+        self.nrows=0
+        self.remaining_words = float("Inf")
+        previous_start = self.file.tell()
+        while True:
+            try:
+                _,_ = self.next()
+            except StopIteration:
+                break
+            except UnicodeDecodeError:
+                break
+            self.nrows+=1
+            if self.nrows % 100000==0:
+                print "{} read".format(self.nrows)
+            previous_start = self.file.tell()
+        self.file.truncate(previous_start)
+        self._rewrite_header()
+        
     def concatenate_file(self,filename):
         """
         Adds all record in a different file to the end of this one.
@@ -94,23 +116,27 @@ class Vector_file(object):
         Overwrites the first line of a binary file (where file length and number of columns
         are stored.)
         """
-        self.fout.seek(0)
+        self.file.seek(0)
         #print self.dims
         header = "{0:09d} ".format(self.nrows) + "{0:05d}\n".format(self.dims)
-        self.fout.write(header)
+        self.file.write(header)
         # Move pointer to end. Just in case.
-        self.fout.seek(0,2)
+        self.file.seek(0,2)
             
     def _open_for_writing(self):
         self.nrows = 0        
-        self.fout = open(self.filename,"w")
+        self.file = open(self.filename,"w")
         self._rewrite_header()
         self.vector_size = self.dims
         
-    def _open_for_appending(self):
-        self.fout = open(self.filename,"r+")
-        self.fout.seek(0,2)        
+    def _open_for_reading(self):
+        self.file = open(self.filename)
         self._preload_metadata()
+        
+    def _open_for_appending(self):
+        self.file = open(self.filename,"r+")
+        self._preload_metadata()
+        self.file.seek(0,2)        
         self.nrows = self.vocab_size
         if self.dims != self.vector_size:
             raise IndexError(
@@ -129,7 +155,7 @@ class Vector_file(object):
         if len(array) != self.dims:
             raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(self.vector_size,self.dims))
 
-        self.fout.write("{} {}\n".format(identifier,array.tobytes()))
+        self.file.write("{} {}\n".format(identifier,array.tobytes()))
         self.nrows += 1
         
     def close(self):
@@ -139,9 +165,8 @@ class Vector_file(object):
         """
         if not "r" in self.mode:
             self._rewrite_header()
-            self.fout.close()
-        else:
-            self.fin.close()
+
+        self.file.close()
             
     def _preload_metadata(self):
         """
@@ -151,10 +176,8 @@ class Vector_file(object):
         """
 
         counts = None
-
-
-        self.fin = open(self.filename)
-        header = self.fin.readline()
+        self.file.seek(0)
+        header = self.file.readline()
         self.vocab_size, self.vector_size = map(int, header.split())  # throws for invalid file format
 
         # Some shuffling to decide whether all the columns are going to be read.
@@ -190,12 +213,15 @@ class Vector_file(object):
         if self.remaining_words<=-1:
             # Allow breaking out of the loop early.
             raise StopIteration
-        fin = self.fin
         # '4' here is the number of bytes in a float.
         binary_len = 4 * self.vector_size
         word = []
+        self.pos = self.file.tell()
         while True:
-            ch = fin.read(1)
+            ch = self.file.read(1)
+            if not ch:
+                print "Ran out of data with {} words left".format(self.remaining_words)
+                raise StopIteration
             if ch == b' ':
                 break
             if ch != b'\n':  # ignore newlines in front of words (some binary files have)
@@ -205,6 +231,9 @@ class Vector_file(object):
                 word = []
         try:
             word = b''.join(word).decode("utf-8")
+        except UnicodeDecodeError:
+                print "Encountered corrupted data with {} words left".format(self.remaining_words)
+                raise StopIteration
         except:
             print(word)
             raise
@@ -212,12 +241,16 @@ class Vector_file(object):
         if self.slice_and_dice:
             # When dims is less than the resolution of the file size.
             read_length = binary_len - 4*(self.dims - self.vector_size)
-            weights = np.fromstring(fin.read(read_length), dtype='<f4')
+            weights = np.fromstring(self.file.read(read_length), dtype='<f4')
+            # Catch up the pointer.
             _ = find.read(binary_len - read_length)
         else:
             try:
-                weights = np.fromstring(fin.read(binary_len), dtype='<f4')            
+                weights = np.fromstring(self.file.read(binary_len), dtype='<f4')            
             except ValueError:
                 print "Ran out of data with {} words left".format(self.remaining_words)
                 raise StopIteration
+            if len(weights) != self.vector_size:
+                print "Ran out of data with {} words left".format(self.remaining_words)
+                raise StopIteration                
         return (word,weights)
