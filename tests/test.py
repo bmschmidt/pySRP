@@ -24,9 +24,15 @@ class ReadAndWrite(unittest.TestCase):
         self.assertTrue(testfile.nrows==3)
         testfile.close()
 
-        testfile = SRP.Vector_file("test.bin", dims=3, mode="a")
-        testfile.add_row(*self.test_set[3])
-        foo = SRP.Vector_file("test.bin")
+        testfile2 = SRP.Vector_file("test.bin", dims=3, mode="a")
+        testfile2.add_row(*self.test_set[3])
+        testfile2.close()
+        self.assertTrue(testfile2.nrows==4)
+
+        
+        foo = SRP.Vector_file("test.bin",mode="r")
+        self.assertTrue(foo.vocab_size==4)
+
         read_in_values = dict()
         for (i,(name,array)) in enumerate(foo):
             read_in_values[name] = array
@@ -38,7 +44,7 @@ class ReadAndWrite(unittest.TestCase):
         self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
         self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["bar"].tolist())
 
-
+        
 class BasicHashing(unittest.TestCase):
     def test_ascii(self):
         hasher = SRP.SRP(6)

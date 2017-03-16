@@ -10,12 +10,50 @@ class SRP_collection(object):
     and so forth.
 
     Unimplemented.
-    " ""
+
     def __init__(self):
         pass
 """
 
+def textset_to_srp(
+        inputfile,
+        outputfile,
+        dim = 640,
+        limit = float("Inf")
+        ):
+    """
+    A convenience wrapper for converting a text corpus to
+    an SRP collection as a block.
+
+    inputfile is the collection. The format is the same as the ingest
+    format used by bookworm and mallet; that is to say, a single unicode
+    file where each line is a document represented as a unique filename, then a tab,
+    and then a long string containing the text of the document.
+    To coerce into the this format, newlines must be removed.
+
+    outputfile is the SRP file to be created. Recommended suffix is `.bin`.
+
+    dims is the dimensionality of the output SRP.
     
+    """
+    import SRP
+    
+    output = Vector_file(outputfile,dims=dim,mode="w")
+    hasher = SRP.SRP(dim=dim)
+
+    for i,line in enumerate(open(inputfile,"r")):
+        try:
+            (id,txt) = line.split("\t",1)
+        except:
+            print line
+            raise
+        transform = hasher.stable_transform(txt,log=True,standardize=True)
+        output.add_row(id,transform)
+        if i + 1 >= limit:
+            break
+        
+    output.close()
+         
 class Vector_file(object):
     """
     A class to manage binary files in the word2vec format.
@@ -70,7 +108,8 @@ class Vector_file(object):
         self.vector_size = self.dims
         
     def _open_for_appending(self):
-        self.fout = open(self.filename,"a")
+        self.fout = open(self.filename,"r+")
+        self.fout.seek(0,2)        
         self._preload_metadata()
         self.nrows = self.vocab_size
         if self.dims != self.vector_size:
@@ -95,7 +134,8 @@ class Vector_file(object):
         
     def close(self):
         """
-        Close the file. It's extremely important to call this method; if it isn't, the header will have out-of-date information.
+        Close the file. It's extremely important to call this method in write modes. i
+        If it isn't, the header will have out-of-date information and files won't be read.
         """
         if not "r" in self.mode:
             self._rewrite_header()
@@ -107,9 +147,7 @@ class Vector_file(object):
         """
         A simplified version of the gensim API.
 
-        From https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py
-
-        
+        From https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py        
         """
 
         counts = None
