@@ -17,6 +17,75 @@ else:
 
 tokenregex = regex.compile(u"\w+")
 
+class SRP_batch(object):
+    def __init__(self, hasher, target_size = 500):
+        """
+        hasher: an object of class SRP for hashing.
+        target_size: the number of **megabytes** to target for the cache.
+        
+        """
+        self.hasher=hasher
+        self.proportion = 1500        
+        self.matrix_entries = target_size*1024*1024/4
+        self.initialize_matrix()
+        
+    def push(self, docid, countdict):
+        (rows,cols) = self.matrix.shape
+        i = len(self.rownames)
+        if i >= rows:
+            raise OverflowError("Matrix is full")        
+        for j, word in enumerate(self.colnames):
+            try:
+                self.matrix[i,j] = countdict[word]
+                del countdict[word]                
+            except KeyError:
+                pass
+
+        if len(countdict) + len(self.colnames) > cols:
+            # If it turns out that there's not room, we bail here.
+            raise OverflowError("Matrix is full")
+
+        # if not, it's safe to commit to there being a docid element.
+        self.rownames.append(docid)
+
+        # Keep incrementing from earlier.
+        j = len(self.colnames)
+        
+        for word,count in countdict.iteritems():
+            # These are *new* items
+            self.colnames.append(word)
+            self.matrix[i,j] = countdict[word]
+            j += 1
+            
+            
+    def initialize_matrix(self):
+        self.rownames = []
+        self.colnames = []        
+        nrow = int(np.sqrt(self.matrix_entries/self.proportion))
+        ncol = nrow * self.proportion
+        self.matrix = np.zeros((nrow,ncol),dtype=np.float32)
+        
+
+    def flush(self):
+        """
+        Transform the current matrix out.
+        """
+        # Assume the next batch has the same proportions as this one.
+        self.proportion = int(len(self.colnames)/len(self.rownames))
+        A = self.matrix[0:len(self.rownames),0:len(self.colnames)]
+        B = np.zeros((len(self.colnames),self.hasher.dim),np.float32)
+        for i,word in enumerate(self.colnames):
+            B[i,] = self.hasher.hash_string(word)
+        return_val = np.dot(A,B)
+        A = ""
+        B = ""
+        names = self.rownames
+        self.initialize_matrix()
+        return [
+            (names[i], return_val[i])
+            for i in range(len(return_val))
+            ]
+        
 class SRP(object):
     """
     A factory to perform random transformations.
@@ -52,7 +121,7 @@ class SRP(object):
         elif py2:
             h = hexstring.decode('hex')
         ints = np.fromstring(h, np.uint8)
-        value = np.unpackbits(ints).astype(np.int8)
+        value = np.unpackbits(ints).astype(self.dtype)
         value[value == 0] = -1
         return value
 
@@ -128,7 +197,7 @@ class SRP(object):
                 count[part] = 1
         return count
 
-    def standardize(self,words,counts):
+    def standardize(self, words, counts, unzip = True):
         full = dict()
         
         for i in range(len(words)):
@@ -146,12 +215,14 @@ class SRP(object):
                     full[part] = addition
         words = []
         counts = []
+        if not unzip:
+            return full
         for (k,v) in full.iteritems():
             words.append(k)
             counts.append(v)
         return (words,counts)
 
-    def stable_transform(self,words,counts=None,dim=None,log=False,standardize=True):
+    def stable_transform(self,words,counts=None,dim=None,log=True,standardize=True):
         """
 
         """
@@ -179,7 +250,9 @@ class SRP(object):
             # This lets us avoid negatives, which would screw things up.
             # Once per 100,000 is an arbitrary floor, obv.
             counts.clip(0)
-        scores = np.zeros((len(words), dim), dtype=np.int8)
+        # The scores are floats, not ints, because np.dot will
+        # use BLAS on a float but not an int.
+        scores = np.zeros((len(words), dim), dtype=np.float32)
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word, dim=dim)
         values = np.dot(counts,scores)
@@ -199,7 +272,7 @@ class SRP(object):
             for j in xrange(i + 1, len(string) + 1):
                 counter[string[i:j]] += 1
 
-        return self.stable_transform(counter.keys(), counts = counter.values(), log = False, standardize = False)
+        return self.stable_transform(counter.keys(), counts = counter.values(), log = True, standardize = False)
     
     def to_base64(self,vector):
         """

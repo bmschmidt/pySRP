@@ -144,6 +144,25 @@ class Vector_file(object):
                 " with {} dimensions as requested".format(
                     self.vector_size,self.dims))
 
+    def _recover_from_corruption(self):
+        starting = self.pos
+        self.debug_mode = True
+        for i in range(2000000):
+            self.file.seek(starting + i)
+            try:
+                gah = self.next()
+                safe_pos = self.pos
+                for n in range(10):
+                    # Make sure things are relatively straightforward from here on out.
+                    _ = self.next()
+                self.file.seek(safe_pos)
+                del self.debug_mode
+                return True
+            except StopIteration:
+                pass
+        print "Encountered corrupted data with {} words left and unable to recover at all".format(self.remaining_words)
+        raise StopIteration            
+        
     def add_row(self, identifier, array):
         """
         Add a new document/word/whatever to the matrix.
@@ -226,13 +245,13 @@ class Vector_file(object):
                 break
             if ch != b'\n':  # ignore newlines in front of words (some binary files have)
                 word.append(ch)
-            if ch == '\n':
-                # Unnecessary.
-                word = []
         try:
             word = b''.join(word).decode("utf-8")
         except UnicodeDecodeError:
-                print "Encountered corrupted data with {} words left".format(self.remaining_words)
+            if not hasattr(self,"debug_mode"):
+                self._recover_from_corruption()
+                return self.__next__()
+            else:
                 raise StopIteration
         except:
             print(word)
@@ -248,7 +267,7 @@ class Vector_file(object):
             try:
                 weights = np.fromstring(self.file.read(binary_len), dtype='<f4')            
             except ValueError:
-                print "Ran out of data with {} words left".format(self.remaining_words)
+                print "Can't parse data with {} words left".format(self.remaining_words)
                 raise StopIteration
             if len(weights) != self.vector_size:
                 print "Ran out of data with {} words left".format(self.remaining_words)

@@ -84,3 +84,5 @@ ENV/
 # Spyder project settings
 .spyderprojecttests/
 test.bin
+.DS_Store
+nohup.out
