@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(name='SRP',
       packages=["SRP"],
-      version='0.1.2',
+      version='0.2.0',
       description="Run stable random projections.",
       long_description = open("README.rst").readlines(),
       url="http://github.com/bmschmidt/SRP",
@@ -27,5 +27,5 @@ setup(name='SRP',
         "Topic :: Text Processing :: Indexing",
         "Topic :: Text Processing :: Linguistic"
         ],
-      install_requires= ["numpy", "regex"]
+      install_requires= ["numpy", "regex", "future"]
 )

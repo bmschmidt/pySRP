@@ -1,16 +1,18 @@
 #### -*- coding: utf-8 -*-
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+from future.utils import iteritems
+
 import SRP
 import numpy as np
 import unittest
-
 
 class ReadAndWrite(unittest.TestCase):
     array1 = np.array([1,2,3],'<f4')
     array2 = np.array([3,2,1],'<f4')
     test_set = [("foo",array1),
                 ("foo2",array1),
-                ("bar",array2),
+                ("fü",array2),
                 ("stop",array2)]
         
 
@@ -19,7 +21,7 @@ class ReadAndWrite(unittest.TestCase):
         for row in self.test_set:
             if row[0] == "stop":
                 continue
-            testfile.add_row(row[0],row[1])
+            testfile.add_row(*row)
 
         self.assertTrue(testfile.nrows==3)
         testfile.close()
@@ -36,13 +38,14 @@ class ReadAndWrite(unittest.TestCase):
         read_in_values = dict()
         for (i,(name,array)) in enumerate(foo):
             read_in_values[name] = array
-
             (comp_name,comp_array) = self.test_set[i]
             self.assertEqual(comp_name,name)
-            self.assertEqual(array.tolist(),comp_array.tolist())            
-
+            self.assertEqual(array.tolist(),comp_array.tolist())
+            
+        foo.close()
+        
         self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
-        self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["bar"].tolist())
+        self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["fü"].tolist())
 
         
 class BasicHashing(unittest.TestCase):
