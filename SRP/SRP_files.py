@@ -57,6 +57,22 @@ class Vector_file(object):
 
     Initialized with a filename, a maximum number of rows to read,
     and a maximum number of columns to read.
+
+    There are three basic ways of operating with one of these.
+
+    1. Treat them as a file object that can read from, line by line, or written
+       to, line by line. This is the basic mode, and the only one that supports
+       write operations.
+
+    2. Slurp an entire object into memory using the 'as_matrix' method. This returns
+       a dict with a matrix and a list of names. This is probably the easiest method
+       if the object fits in memory.
+
+    3. Access individual values using dict methods: eg, model['foo'] will return
+       the vector representing token 'foo'. The first usage of this method will parse
+       the entire file for keys, which may take quite a while; later reads will access an
+       in-memory cache of ids to determine where on disk to look, which is significantly faster
+       but still slower than an in-memory lookup.
     """
     def __init__(self, filename, dims=float("Inf"), mode="r",max_rows=float("Inf")):
         self.filename = filename
@@ -70,7 +86,12 @@ class Vector_file(object):
         if self.mode == "a":
             self._open_for_appending()
 
+
     def repair_file(self):
+        """
+        When writing millions of these, sometimes bytes get unaligned: this
+        is an imprecise rubric that generally works to fix corrupted data.
+        """
         if self.mode != "a":
             raise IOError("Can only repair when in append mode")
         self._preload_metadata()
@@ -128,14 +149,14 @@ class Vector_file(object):
         self.file = open(self.filename, 'rb')
         self._preload_metadata()
 
-    def to_matrix(self, unit_length = False):
+    def to_matrix(self, unit_length = False, clean = False):
         """
         Returns the entire file as a matrix with names (wrapped in a dict).
         
         This can, obviously, overflow memory on a large file.
         """
         labels = []
-        matrix = np.zeros((self.vocab_size,self.dims),"<f4")
+        matrix = np.zeros((min([self.vocab_size,self.max_rows]),self.dims),"<f4")
         for i,(id,row) in enumerate(self):
             labels.append(id)
             if unit_length:
@@ -184,8 +205,15 @@ class Vector_file(object):
         if len(array) != self.dims:
             raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(self.vector_size,self.dims))
         if py2:
-            #identifier = identifier.encode("utf-8")
-            self.file.write(b"{} {}\n".format(identifier.encode("utf-8"), array.tobytes()))
+            try:
+                print(identifier)
+                self.file.write(identifier)
+            except UnicodeEncodeError:
+                # Don't do this at first to allow writing of already encoded unicode
+                self.file.write(identifier.encode("utf-8"))
+            self.file.write(b" ")
+            self.file.write(array.tobytes())
+            self.file.write(b"\n")
         if py3:
             self.file.write(identifier.encode("utf-8") + b" ")
             self.file.write(array.tobytes())
@@ -228,58 +256,90 @@ class Vector_file(object):
         
         self.remaining_words = min([self.vocab_size,self.max_rows])
 
+    def __getitem__(self):
+        pass
+
+    
+    
+    def _read_row_name(self):
+        buffer = []
+        while True:
+            ch = self.file.read(1)
+            if not ch:
+                print("Ran out of data with {} words left".format(self.remaining_words))
+                return
+            if ch == b' ':
+                break
+            if ch != b'\n':
+                # ignore newlines in front of words (some binary files have em)
+                buffer.append(ch)
+        try:
+            word = b''.join(buffer).decode("utf-8")
+        except TypeError:
+            # We're in python 3
+            word = ''.join(word)
+        except UnicodeDecodeError:
+            if not hasattr(self,"debug_mode"):
+                self._recover_from_corruption()
+            else:
+                raise
+        except:
+            print("Couldn't export:")
+            print(word)
+            raise
+        return word
+
+    def _build_offset_lookup(self, force = False):
+        if hasattr(self, "_offset_lookup") and not force:
+            return
+        self._offset_lookup = {}
+        self._preload_metadata()
+        while len(self._offset_lookup) < self.vocab_size:
+            label = self._read_row_name()
+            self._offset_lookup[label] = self.file.tell()
+            # Skip to the next name without reading.
+            self.file.seek(4*self.vector_size, 1)
+
+    def __getitem__(self, label):
+        self._build_offset_lookup()
+        needed_position = self._offset_lookup[label]
+        self.file.seek(needed_position)
+        return self._read_binary_row()
+        
+    def _read_binary_row(self):
+        binary_len = 4 * self.vector_size
+        self.pos = self.file.tell()
+        if self.slice_and_dice:
+            # When dims is less than the resolution of the file size.
+            read_length = 4*self.dims
+            weights = np.frombuffer(self.file.read(read_length), dtype='<f4')
+            # Catch up the pointer.
+            _ = self.file.read(4*self.vector_size - read_length)
+        else:
+            try:
+                weights = np.frombuffer(self.file.read(binary_len), dtype='<f4')            
+            except ValueError:
+                print("Can't parse data with {} words left".format(self.remaining_words))
+                raise StopIteration
+            if len(weights) != self.vector_size:
+                print("Ran out of data with {} words left".format(self.remaining_words))
+                raise StopIteration                
+        return weights
+    
     def __iter__(self):
         """
-        Again, I'm using a stripped down version of the gensim code.
+        Again, I'm starting with a version of the gensim code.
         https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py
         """
+
+        # Always preload the metadata so you can iterate multiple times.
+        self._preload_metadata()
         while True:
             self.remaining_words = self.remaining_words-1
             if self.remaining_words<=-1:
                 # Allow breaking out of the loop early.
                 return
+            word = self._read_row_name()
+            weights = self._read_binary_row()
             # '4' here is the number of bytes in a float.
-            binary_len = 4 * self.vector_size
-            word = []
-            self.pos = self.file.tell()
-            while True:
-                ch = self.file.read(1)
-                if not ch:
-                    print("Ran out of data with {} words left".format(self.remaining_words))
-                    return
-                if ch == b' ':
-                    break
-                if ch != b'\n':
-                    # ignore newlines in front of words (some binary files have em)
-                    word.append(ch)
-            try:
-                word = b''.join(word).decode("utf-8")
-            except TypeError:
-                # We're in python 3
-                word = ''.join(word)
-                print(word)
-            except UnicodeDecodeError:
-                if not hasattr(self,"debug_mode"):
-                    self._recover_from_corruption()
-                    continue
-                else:
-                    return
-            except:
-                print(word)
-                raise
-            if self.slice_and_dice:
-                # When dims is less than the resolution of the file size.
-                read_length = binary_len - 4*(self.dims - self.vector_size)
-                weights = np.frombuffer(self.file.read(read_length), dtype='<f4')
-                # Catch up the pointer.
-                _ = find.read(binary_len - read_length)
-            else:
-                try:
-                    weights = np.frombuffer(self.file.read(binary_len), dtype='<f4')            
-                except ValueError:
-                    print("Can't parse data with {} words left".format(self.remaining_words))
-                    raise StopIteration
-                if len(weights) != self.vector_size:
-                    print("Ran out of data with {} words left".format(self.remaining_words))
-                    raise StopIteration                
             yield (word,weights)
