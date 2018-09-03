@@ -94,8 +94,8 @@ class SRP(object):
 
         value = self._expand_hexstring(full_hash)[:self.dim]
 
-        if self._cache_size() >= self.cache_limit:
-            # Clear the cache; aybe things have changed.
+        if cache and self._cache_size() >= self.cache_limit:
+            # Clear the cache; maybe things have changed.
             self._hash_dict = {}
         
         if cache and self._cache_size() < self.cache_limit:
