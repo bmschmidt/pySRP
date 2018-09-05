@@ -2,18 +2,20 @@ from __future__ import print_function
 from __future__ import absolute_import, division, print_function, unicode_literals
 import sys
 import numpy as np
+import warnings
 
-if sys.version_info[0]==3:
+if sys.version_info[0] == 3:
     (py2, py3) = False, True
 else:
-    (py2,py3) = True, False
+    (py2, py3) = True, False
+
 
 def textset_to_srp(
         inputfile,
         outputfile,
-        dim = 640,
-        limit = float("Inf")
-        ):
+        dim=640,
+        limit=float("Inf")
+):
     """
     A convenience wrapper for converting a text corpus to
     an SRP collection as a block.
@@ -27,26 +29,27 @@ def textset_to_srp(
     outputfile is the SRP file to be created. Recommended suffix is `.bin`.
 
     dims is the dimensionality of the output SRP.
-    
+
     """
     import SRP
-    
-    output = Vector_file(outputfile,dims=dim,mode="w")
+
+    output = Vector_file(outputfile, dims=dim, mode="w")
     hasher = SRP.SRP(dim=dim)
 
-    for i,line in enumerate(open(inputfile,"r")):
+    for i, line in enumerate(open(inputfile, "r")):
         try:
-            (id,txt) = line.split("\t",1)
+            (id, txt) = line.split("\t", 1)
         except:
             print(line)
             raise
-        transform = hasher.stable_transform(txt,log=True,standardize=True)
-        output.add_row(id,transform)
+        transform = hasher.stable_transform(txt, log=True, standardize=True)
+        output.add_row(id, transform)
         if i + 1 >= limit:
             break
-        
+
     output.close()
-         
+
+
 class Vector_file(object):
     """
     A class to manage binary files in the word2vec format.
@@ -74,18 +77,35 @@ class Vector_file(object):
        in-memory cache of ids to determine where on disk to look, which is significantly faster
        but still slower than an in-memory lookup.
     """
-    def __init__(self, filename, dims=float("Inf"), mode="r",max_rows=float("Inf")):
+
+    def __init__(self, filename, dims=float("Inf"), mode="r", max_rows=float("Inf"), precision = 4):
+        """
+        Creates an SRP object.
+
+        filename: The location on disk.
+        dims: The number of vectors to store for each document. Typically ~100 to ~1000.
+              Need not be specified if working with an existing file.
+        mode: One of: 'r' (read an existing file); 'w' (create a new file); 'a' (append to the 
+              end of an existing file)
+        max_rows: clip the document to a fixed length. Best left unused.
+        precision: bytes to use for each 
+        """
+        
         self.filename = filename
         self.dims = dims
         self.mode = mode
         self.max_rows = max_rows
+        if not precision in [2, 4]:
+            e = "Only `4` (single) and `2` (half) bytes are valid options for `precision`"
+            raise ValueError(e)
+        self.precision = precision
+        self.float_format = '<f{}'.format(precision)
         if self.mode == "r":
             self._open_for_reading()
         if self.mode == "w":
             self._open_for_writing()
         if self.mode == "a":
             self._open_for_appending()
-
 
     def repair_file(self):
         """
@@ -96,35 +116,35 @@ class Vector_file(object):
             raise IOError("Can only repair when in append mode")
         self._preload_metadata()
         # This also sets the pointer to the front.
-        self.nrows=0
+        self.nrows = 0
         self.remaining_words = float("Inf")
         previous_start = self.file.tell()
         while True:
             try:
-                _,_ = self.next()
+                _, _ = self.next()
             except StopIteration:
                 break
             except UnicodeDecodeError:
                 break
-            self.nrows+=1
-            if self.nrows % 100000==0:
+            self.nrows += 1
+            if self.nrows % 100000 == 0:
                 print("{} read".format(self.nrows))
             previous_start = self.file.tell()
         self.file.truncate(previous_start)
         self._rewrite_header()
-        
-    def concatenate_file(self,filename):
+
+    def concatenate_file(self, filename):
         """
         Adds all record in a different file to the end of this one.
         Useful if creation of files has been parallelized or distributed.
 
         In theory, it should be possible to add a large file to a smaller one.
         """
-        
-        new_file = Vector_file(filename, dims = self.dims, mode="r")
+
+        new_file = Vector_file(filename, dims=self.dims, mode="r")
         for (id, array) in new_file:
             self.add_row(id, array)
-    
+
     def _rewrite_header(self):
         """
         Overwrites the first line of a binary file (where file length and number of columns
@@ -137,43 +157,44 @@ class Vector_file(object):
         if py3:
             self.file.write(header.encode("utf-8"))
         # Move pointer to end. Just in case.
-        self.file.seek(0,2)
-            
+        self.file.seek(0, 2)
+
     def _open_for_writing(self):
-        self.nrows = 0        
-        self.file = open(self.filename,"wb")
+        self.nrows = 0
+        self.file = open(self.filename, "wb")
         self._rewrite_header()
         self.vector_size = self.dims
-        
+
     def _open_for_reading(self):
         self.file = open(self.filename, 'rb')
         self._preload_metadata()
 
-    def to_matrix(self, unit_length = False, clean = False):
+    def to_matrix(self, unit_length=False, clean=False):
         """
         Returns the entire file as a matrix with names (wrapped in a dict).
-        
+
         This can, obviously, overflow memory on a large file.
         """
         labels = []
-        matrix = np.zeros((min([self.vocab_size,self.max_rows]),self.dims),"<f4")
-        for i,(id,row) in enumerate(self):
+        matrix = np.zeros(
+            (min([self.vocab_size, self.max_rows]), self.dims), "<f4")
+        for i, (id, row) in enumerate(self):
             labels.append(id)
             if unit_length:
                 row = row/np.linalg.norm(row)
             matrix[i] = row
-        return {"names":labels,"matrix":matrix}
-            
+        return {"names": labels, "matrix": matrix}
+
     def _open_for_appending(self):
-        self.file = open(self.filename,"rb+")
+        self.file = open(self.filename, "rb+")
         self._preload_metadata()
-        self.file.seek(0,2)        
+        self.file.seek(0, 2)
         self.nrows = self.vocab_size
         if self.dims != self.vector_size:
             raise IndexError(
                 "The existing files is {} dimensions: unable to append"
                 " with {} dimensions as requested".format(
-                    self.vector_size,self.dims))
+                    self.vector_size, self.dims))
 
     def _recover_from_corruption(self):
         starting = self.pos
@@ -191,19 +212,24 @@ class Vector_file(object):
                 return True
             except StopIteration:
                 pass
-        print("Encountered corrupted data with {} words left and unable to recover at all".format(self.remaining_words))
-        raise StopIteration            
-        
+        print("Encountered corrupted data with {} words left and unable to recover at all".format(
+            self.remaining_words))
+        raise StopIteration
+
     def add_row(self, identifier, array):
         """
         Add a new document/word/whatever to the matrix.
         """
         if type(array) != np.ndarray:
             raise TypeError("Must pass a numpy ndarray as array")
-        if array.dtype != np.dtype('<f4'):
-            raise TypeError("Numpy array must be of type '<f4'")
+        if array.dtype != np.dtype(self.float_format):
+            if (array.dtype == np.dtype("<f4")) and self.precision == 2:
+                array = array.astype(self.float_format)
+            else:
+                raise TypeError("Numpy array must be of type '<f4'")
         if len(array) != self.dims:
-            raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(self.vector_size,self.dims))
+            raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(
+                self.vector_size, self.dims))
         if py2:
             try:
                 print(identifier)
@@ -219,7 +245,7 @@ class Vector_file(object):
             self.file.write(array.tobytes())
             self.file.write(b"\n")
         self.nrows += 1
-        
+
     def close(self):
         """
         Close the file. It's extremely important to call this method in write modes:
@@ -230,7 +256,7 @@ class Vector_file(object):
             self._rewrite_header()
 
         self.file.close()
-            
+
     def _preload_metadata(self):
         """
         A simplified version of the gensim API.
@@ -241,32 +267,49 @@ class Vector_file(object):
         counts = None
         self.file.seek(0)
         header = self.file.readline()
-        self.vocab_size, self.vector_size = map(int, header.split())  # throws for invalid file format
+        self.vocab_size, self.vector_size = map(
+            int, header.split())  # throws for invalid file format
         # Some shuffling to decide whether all the columns are going to be read.
         if self.dims < float("Inf") and self.dims > self.vector_size:
             import sys
             sys.stderr.write(
                 "WARNING: data has only {} columns but call requested top {}".format(
-                    self.vector_size,self.dims))
-        if self.dims == float("Inf") or self.dims==self.vector_size:
+                    self.vector_size, self.dims))
+        if self.dims == float("Inf") or self.dims == self.vector_size:
             self.dims = self.vector_size
             self.slice_and_dice = False
         else:
             self.slice_and_dice = True
-        
-        self.remaining_words = min([self.vocab_size,self.max_rows])
 
+        self.remaining_words = min([self.vocab_size, self.max_rows])
+
+        self._check_if_half_precision()
+        
+    def _check_if_half_precision(self):
+        
+        body_start = self.file.tell()        
+        word, weights = (self._read_row_name(), self._read_binary_row())
+
+        meanval = np.mean(np.abs(weights))
+        
+        if meanval > 1e10:
+            warning = "Average size is extremely large" + \
+               "did you mean to specify 'precision = 2'?"
+            warnings.warn(warning)
+        
+        self.file.seek(body_start)
+
+        
     def __getitem__(self):
         pass
 
-    
-    
     def _read_row_name(self):
         buffer = []
         while True:
             ch = self.file.read(1)
             if not ch:
-                print("Ran out of data with {} words left".format(self.remaining_words))
+                print("Ran out of data with {} words left".format(
+                    self.remaining_words))
                 return
             if ch == b' ':
                 break
@@ -279,7 +322,7 @@ class Vector_file(object):
             # We're in python 3
             word = ''.join(word)
         except UnicodeDecodeError:
-            if not hasattr(self,"debug_mode"):
+            if not hasattr(self, "debug_mode"):
                 self._recover_from_corruption()
             else:
                 raise
@@ -289,7 +332,7 @@ class Vector_file(object):
             raise
         return word
 
-    def _build_offset_lookup(self, force = False):
+    def _build_offset_lookup(self, force=False):
         if hasattr(self, "_offset_lookup") and not force:
             return
         self._offset_lookup = {}
@@ -298,34 +341,37 @@ class Vector_file(object):
             label = self._read_row_name()
             self._offset_lookup[label] = self.file.tell()
             # Skip to the next name without reading.
-            self.file.seek(4*self.vector_size, 1)
+            self.file.seek(self.precision*self.vector_size, 1)
 
     def __getitem__(self, label):
         self._build_offset_lookup()
         needed_position = self._offset_lookup[label]
         self.file.seek(needed_position)
         return self._read_binary_row()
-        
+
     def _read_binary_row(self):
-        binary_len = 4 * self.vector_size
+        binary_len = self.precision * self.vector_size
         self.pos = self.file.tell()
         if self.slice_and_dice:
             # When dims is less than the resolution of the file size.
-            read_length = 4*self.dims
-            weights = np.frombuffer(self.file.read(read_length), dtype='<f4')
+            read_length = self.precision*self.dims
+            weights = np.frombuffer(self.file.read(read_length), dtype=self.float_format)
             # Catch up the pointer.
-            _ = self.file.read(4*self.vector_size - read_length)
+            _ = self.file.read(self.precision*self.vector_size - read_length)
         else:
             try:
-                weights = np.frombuffer(self.file.read(binary_len), dtype='<f4')            
+                weights = np.frombuffer(
+                    self.file.read(binary_len), dtype=self.float_format)
             except ValueError:
-                print("Can't parse data with {} words left".format(self.remaining_words))
+                print("Can't parse data with {} words left".format(
+                    self.remaining_words))
                 raise StopIteration
             if len(weights) != self.vector_size:
-                print("Ran out of data with {} words left".format(self.remaining_words))
-                raise StopIteration                
+                print("Ran out of data with {} words left".format(
+                    self.remaining_words))
+                raise StopIteration
         return weights
-    
+
     def __iter__(self):
         """
         Again, I'm starting with a version of the gensim code.
@@ -334,12 +380,12 @@ class Vector_file(object):
 
         # Always preload the metadata so you can iterate multiple times.
         self._preload_metadata()
+        
         while True:
             self.remaining_words = self.remaining_words-1
-            if self.remaining_words<=-1:
+            if self.remaining_words <= -1:
                 # Allow breaking out of the loop early.
                 return
             word = self._read_row_name()
             weights = self._read_binary_row()
-            # '4' here is the number of bytes in a float.
-            yield (word,weights)
+            yield (word, weights)
