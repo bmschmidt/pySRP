@@ -24,7 +24,7 @@ class SRP(object):
     A factory to perform random transformations.
     """
 
-    def __init__(self, dim=640, cache=True, cache_limit=15e05):
+    def __init__(self, dim=640, cache=True, cache_limit=15e05, log = True):
         """
         dim:     The number of dimensions that the transformer
                  should reduce to.
@@ -39,6 +39,9 @@ class SRP(object):
         cache_limit: The maximum cache size. Once the cache hits this size, it is deleted
                  and starts over: so if this size is too small (less than 100,000, say)
                  performance will actually be worse. Recommended is over a million.
+
+        log:     Use a log transform? Usually useful, but in cases where function words matter
+                 more, it may not be.
         """
         self.dim=dim
         self.cache=cache
@@ -177,7 +180,7 @@ class SRP(object):
         counts.clip(0)
         return counts
 
-    def stable_transform(self,words,counts=None,log=True,standardize=True,
+    def stable_transform(self,words,counts=None,log=None,standardize=True,
                         ORP = None,
                         multi = False):
         """
@@ -193,7 +196,8 @@ class SRP(object):
         Multi: do lots of transforms. Useful only for testing configurations.
         """
 
-
+        if log is None:
+            log = self.log
         if counts is None:
             (words,counts) = self._str_to_wordcounts(words)
         if standardize:
