@@ -3,6 +3,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import sys
 import numpy as np
 import warnings
+import os
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
@@ -10,11 +11,28 @@ else:
     (py2, py3) = True, False
 
 
+def textset_yielder(inputfile):
+    for line in open(inputfile, "r"):
+        try:
+            (id, txt) = line.split("\t", 1)
+        except:
+            print(line)
+            raise
+        yield (id, txt)
+
+def directory_yielder(inputfile):
+    for filename in os.listdir(inputfile):
+        if filename.endswith(".txt"):
+            id = filename[:-4]
+            txt = "\n".join(open(os.path.join(inputfile, filename)).readlines())
+            yield (id, txt)
+            
 def textset_to_srp(
         inputfile,
         outputfile,
         dim=640,
-        limit=float("Inf")
+        limit=float("Inf"),
+        log = True
 ):
     """
     A convenience wrapper for converting a text corpus to
@@ -26,6 +44,8 @@ def textset_to_srp(
     and then a long string containing the text of the document.
     To coerce into the this format, newlines must be removed.
 
+    inputfile can also be a **directory** of txt files.
+
     outputfile is the SRP file to be created. Recommended suffix is `.bin`.
 
     dims is the dimensionality of the output SRP.
@@ -34,14 +54,16 @@ def textset_to_srp(
     import SRP
 
     output = Vector_file(outputfile, dims=dim, mode="w")
-    hasher = SRP.SRP(dim=dim)
+    hasher = SRP.SRP(dim=dim, )
 
-    for i, line in enumerate(open(inputfile, "r")):
-        try:
-            (id, txt) = line.split("\t", 1)
-        except:
-            print(line)
-            raise
+    if inputfile.endswith(".txt"):
+        yielder = textset_yielder
+    elif os.path.isdir(inputfile):
+        yielder = directory_yielder
+    else:
+        raise ValueError("Don't know how to process {}: must be a textfile or a directory".format(inputfile))
+    
+    for i, (id, txt) in enumerate(yielder(inputfile)):
         transform = hasher.stable_transform(txt, log=True, standardize=True)
         output.add_row(id, transform)
         if i + 1 >= limit:
@@ -232,7 +254,6 @@ class Vector_file(object):
                 self.vector_size, self.dims))
         if py2:
             try:
-                print(identifier)
                 self.file.write(identifier)
             except UnicodeEncodeError:
                 # Don't do this at first to allow writing of already encoded unicode
@@ -370,6 +391,8 @@ class Vector_file(object):
                 print("Ran out of data with {} words left".format(
                     self.remaining_words))
                 raise StopIteration
+        if self.mode=='r' and self.precision == 2:
+            weights = weights.astype("<f4")
         return weights
 
     def __iter__(self):
