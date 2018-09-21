@@ -242,6 +242,10 @@ class Vector_file(object):
         """
         Add a new document/word/whatever to the matrix.
         """
+
+        if " " in identifier:
+            raise TypeError("Spaces are not allowed in row identifiers")
+        
         if type(array) != np.ndarray:
             raise TypeError("Must pass a numpy ndarray as array")
         if array.dtype != np.dtype(self.float_format):

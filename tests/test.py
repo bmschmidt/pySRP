@@ -10,6 +10,7 @@ import unittest
 class ReadAndWrite(unittest.TestCase):
     array1 = np.array([1,2,3],'<f4')
     array2 = np.array([3,2,1],'<f4')
+    # Dummy values for file testing.
     test_set = [("foo",array1),
                 ("foo2",array1),
                 ("fü",array2),
@@ -47,6 +48,11 @@ class ReadAndWrite(unittest.TestCase):
         self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
         self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["fü"].tolist())
 
+    def test_error_on_load(self):
+        testfile = SRP.Vector_file("test.bin", dims=3, mode="w")
+        with self.assertRaises(TypeError):
+            testfile.add_row("this is a space", self.array1)
+        testfile.close()
         
 class BasicHashing(unittest.TestCase):
     def test_ascii(self):
@@ -124,5 +130,13 @@ class BasicHashing(unittest.TestCase):
         hashed_manually_tokenized = hasher.stable_transform(manually_tokenized, [1, 1, 1], log=False,standardize=True)
         self.assertEqual(hashed_manually_tokenized.tolist(), hashed_standardized.tolist())
 
+    def test_numeric_substitution(self):
+        hasher = SRP.SRP(6)
+        string1 = "I was born in 2001"
+        string2 = "I was born in 1901"
+        h1 = hasher.stable_transform(string1, log=False, standardize=True)
+        h2 = hasher.stable_transform(string1, log=False, standardize=True)        
+        self.assertEqual(h1.tolist(), h2.tolist())
+        
 if __name__=="__main__":
     unittest.main()
