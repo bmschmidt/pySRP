@@ -24,7 +24,7 @@ class SRP(object):
     A factory to perform random transformations.
     """
 
-    def __init__(self, dim=640, cache=True, cache_limit=15e05, log = True):
+    def __init__(self, dim=640, cache=True, cache_limit=15e05, log = True, xor = False):
         """
         dim:     The number of dimensions that the transformer
                  should reduce to.
@@ -42,6 +42,8 @@ class SRP(object):
 
         log:     Use a log transform? Usually useful, but in cases where function words matter
                  more, it may not be.
+
+        xor:     Use bitwise operations instead of dot products.
         """
         self.dim=dim
         self.cache=cache
@@ -49,6 +51,9 @@ class SRP(object):
         self.dtype = np.float32
         self._recurse_dict = {}
         self._scaled_recurse_dict = {}
+        self.log = log
+        self.xor = xor
+        
         if cache:
             # This is the actual hash.
             self._hash_dict = dict()
@@ -57,16 +62,29 @@ class SRP(object):
         return len(self._hash_dict)
 
     def _expand_hexstring(self, hexstring):
+        
         if py3 and isinstance(hexstring,str):
             h = bytes.fromhex(hexstring)
         elif py2:
             h = hexstring.decode('hex')
         ints = np.frombuffer(h, np.uint8)
-        # While unpacking, shift from [0,1] to [-1,1]
-        value = np.unpackbits(ints).astype(np.int8)*2-1
-        return value
+        value = np.unpackbits(ints).astype(np.int8)
+        return (value*2-1)[:self.dim]
+        
+    def string_to_binary(self, string):
+        expand = np.ceil(self.dim / 160).astype('i8')
+        full_hash = ""
+        for i in range(0,expand):
+            seedword = string + "_"*i
+            try:
+                full_hash += hashlib.sha1(seedword.encode("utf-8")).hexdigest()
+            except UnicodeDecodeError:
+                full_hash += hashlib.sha1(seedword).hexdigest()
+
+        return self._expand_hexstring(full_hash)
 
     def hash_string(self, string, cache=None):
+    
         """
         Gives a hash for a word.
         string:      The string to be hashed.
@@ -77,6 +95,8 @@ class SRP(object):
         # First we check if the cache ought to contain the
         # results; if so, we either return the result, or
         # set a note to enter into the cache when done.
+
+
         if self.cache:
             try:
                 return self._hash_dict[string]
@@ -86,23 +106,15 @@ class SRP(object):
         else:
             cache = False
 
-        expand = np.ceil(self.dim / 160).astype('i8')
-        full_hash = ""
-        for i in range(0,expand):
-            seedword = string + "_"*i
-            try:
-                full_hash += hashlib.sha1(seedword.encode("utf-8")).hexdigest()
-            except UnicodeDecodeError:
-                full_hash += hashlib.sha1(seedword).hexdigest()
-
-        value = self._expand_hexstring(full_hash)[:self.dim]
-
+        value = self.string_to_binary(string)
+            
         if cache and self._cache_size() >= self.cache_limit:
             # Clear the cache; maybe things have changed.
             self._hash_dict = {}
         
         if cache and self._cache_size() < self.cache_limit:
             self._hash_dict[string] = value
+        
         return value
 
     def tokenize(self,string,regex=tokenregex):
@@ -180,20 +192,12 @@ class SRP(object):
         counts.clip(0)
         return counts
 
-    def stable_transform(self,words,counts=None,log=None,standardize=True,
-                        ORP = None,
-                        multi = False):
+    def stable_transform(self, words, counts=None, log=None,standardize=True):
         """
 
         counts: the number of occurrences for each word in 'words'. This can be "none",
                 in which 'words' is treated as a string.
 
-        ORP: What kind of orthographic projection to use. None or false indicates normal
-        binary SRP, "unscaled" indicates integers (where longer words will have longer vectors),
-        and "scaled" or True indicates scaled so that
-        each word vector is unit length.
-
-        Multi: do lots of transforms. Useful only for testing configurations.
         """
 
         if log is None:
@@ -205,46 +209,17 @@ class SRP(object):
         if log:
             counts = self._log_transform(counts)
 
-        if not multi:
-            scores = np.zeros((len(words), self.dim), dtype=np.float32)
-            for i, word in enumerate(words):
-                if not ORP:
-                    scores[i] = self.hash_string(word)
-                elif ORP == "unscaled":
-                    scores[i] = self.hash_all_substrings(word)
-                else:
-                    scores[i] = self.scaled_ORP(word)
-
-            values = np.dot(counts,scores)
-            return values
+        scores = np.zeros((len(words), self.dim), dtype = np.int32)
         
-        if multi:
-            # This makes it possible to run the log and counts separately
-            # from the rest.
-            out = []
-            for mtype in multi:
-                val = self.stable_transform(words,counts,log=False,standardize=False,ORP=mtype)
-                out.append(val)
-            return out
-        
-    def scaled_ORP(self,string):
-        try:
-            return self._scaled_recurse_dict[string]
-        except KeyError:
+        for i, word in enumerate(words):
+            scores[i] = self.hash_string(word)
+            
+        if self.xor:
             pass
+        else:
+            values = np.dot(counts,scores)
 
-
-        unscaled = self.hash_all_substrings(string).astype("f4")
-        scaled = unscaled/np.linalg.norm(unscaled)
-        if self.cache:
-            if len(self._scaled_recurse_dict) > self.cache_limit:
-                self._scaled_recurse_dict = {}
-            self._scaled_recurse_dict[string] = scaled
-            
-        return scaled
-        
-            
-        
+        return values
     
     def hash_all_substrings(self, string,depth=0):
         """
