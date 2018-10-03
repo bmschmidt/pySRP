@@ -128,7 +128,13 @@ class Vector_file(object):
             self._open_for_writing()
         if self.mode == "a":
             self._open_for_appending()
+    
+    def __enter__(self):
+        return self
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+            
     def repair_file(self):
         """
         When writing millions of these, sometimes bytes get unaligned: this
@@ -163,7 +169,7 @@ class Vector_file(object):
         In theory, it should be possible to add a large file to a smaller one.
         """
 
-        new_file = Vector_file(filename, dims=self.dims, mode="r")
+        new_file = Vector_file(filename, dims=self.dims, mode="r", precision = self.precision)
         for (id, array) in new_file:
             self.add_row(id, array)
 
@@ -416,3 +422,7 @@ class Vector_file(object):
             word = self._read_row_name()
             weights = self._read_binary_row()
             yield (word, weights)
+
+
+if __name__ == "__main__":
+    run_arguments()

@@ -17,6 +17,19 @@ class ReadAndWrite(unittest.TestCase):
                 ("stop",array2)]
         
 
+    def test_entrance_format(self):
+        with SRP.Vector_file("test.bin", dims=3, mode="w") as testfile:
+            for row in self.test_set:
+                if row[0] == "stop":
+                    continue
+                testfile.add_row(*row)
+
+        testfile2 = SRP.Vector_file("test.bin", dims=3, mode="a")
+        testfile2.add_row(*self.test_set[3])
+        testfile2.close()
+        self.assertTrue(testfile2.nrows==4)
+        
+    
     def test_creation_and_reading(self):
         testfile = SRP.Vector_file("test.bin", dims=3, mode="w")
         for row in self.test_set:
