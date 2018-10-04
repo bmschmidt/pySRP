@@ -213,14 +213,47 @@ class SRP(object):
         
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
-            
-        if self.xor:
-            pass
-        else:
-            values = np.dot(counts,scores)
+
+        values = np.dot(counts,scores)
 
         return values
-    
+
+    def xor_transform(self, words, counts=None, log=None,standardize=True):
+        """
+        counts: the number of occurrences for each word in 'words'. This can be "none",
+                in which 'words' is treated as a string.
+        """
+        
+        if log is None:
+            log = self.log
+        if counts is None:
+            (words,counts) = self._str_to_wordcounts(words)
+        if standardize:
+            (words,counts) = self.standardize(words,counts)
+        if log:
+            counts = self._log_transform(counts)
+
+        scores = np.zeros((len(words), self.dim), dtype = np.uint32)
+
+        # These are the uint32 ways of writing 0 and negative 0.
+        vals = np.array([0, 0, 2**31], np.uint32)
+        
+        for i, word in enumerate(words):
+            scores[i] = vals[self.hash_string(word)]
+            
+        scores = np.tile(scores, len(vals)).transpose()
+        zero_mask = np.zeros_like(scores)
+        # I used uint to write the binary of a float.
+        counts.dtype = np.uint32
+
+        # Invert all the bits
+        np.bitwise_xor(scores, zero_mask, scores)
+        np.bitwise_xor(scores, counts, scores)
+
+        scores.dtype = np.float32
+        values = np.sum(scores, axis = 1)
+        return values
+            
     def hash_all_substrings(self, string,depth=0):
         """
         Breaks a string down into all possible substrings, and then
