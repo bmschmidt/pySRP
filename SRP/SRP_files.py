@@ -248,12 +248,16 @@ class Vector_file(object):
         """
         Add a new document/word/whatever to the matrix.
         """
-
-        if " " in identifier:
-            raise TypeError("Spaces are not allowed in row identifiers")
+        try:
+            if " " in identifier:
+                raise TypeError("Spaces are not allowed in row identifiers")
+        except UnicodeDecodeError:
+            if " " in identifier.decode("utf-8"):
+                raise TypeError("Spaces are not allowed in row identifiers")
         
         if type(array) != np.ndarray:
             raise TypeError("Must pass a numpy ndarray as array")
+        
         if array.dtype != np.dtype(self.float_format):
             if (array.dtype == np.dtype("<f4")) and self.precision == 2:
                 array = array.astype(self.float_format)
@@ -262,6 +266,7 @@ class Vector_file(object):
         if len(array) != self.dims:
             raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(
                 self.vector_size, self.dims))
+        
         if py2:
             try:
                 self.file.write(identifier)

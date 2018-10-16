@@ -24,7 +24,7 @@ class SRP(object):
     A factory to perform random transformations.
     """
 
-    def __init__(self, dim=640, cache=True, cache_limit=15e05, log = True, xor = False):
+    def __init__(self, dim=640, cache=True, cache_limit=15e05, log = True):
         """
         dim:     The number of dimensions that the transformer
                  should reduce to.
@@ -42,8 +42,6 @@ class SRP(object):
 
         log:     Use a log transform? Usually useful, but in cases where function words matter
                  more, it may not be.
-
-        xor:     Use bitwise operations instead of dot products.
         """
         self.dim=dim
         self.cache=cache
@@ -52,7 +50,6 @@ class SRP(object):
         self._recurse_dict = {}
         self._scaled_recurse_dict = {}
         self.log = log
-        self.xor = xor
         
         if cache:
             # This is the actual hash.
@@ -180,6 +177,7 @@ class SRP(object):
             if isinstance(words,str) or isinstance(words,bytes):
                 words = [words]
                 counts = np.array([1],np.float32)
+        
         return (words,counts)
 
     def _log_transform(self,counts,thresh = 1e05):
@@ -209,49 +207,13 @@ class SRP(object):
         if log:
             counts = self._log_transform(counts)
 
-        scores = np.zeros((len(words), self.dim), dtype = np.int32)
+        scores = np.zeros((len(words), self.dim), dtype = np.float32)
         
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
 
         values = np.dot(counts,scores)
 
-        return values
-
-    def xor_transform(self, words, counts=None, log=None,standardize=True):
-        """
-        counts: the number of occurrences for each word in 'words'. This can be "none",
-                in which 'words' is treated as a string.
-        """
-        
-        if log is None:
-            log = self.log
-        if counts is None:
-            (words,counts) = self._str_to_wordcounts(words)
-        if standardize:
-            (words,counts) = self.standardize(words,counts)
-        if log:
-            counts = self._log_transform(counts)
-
-        scores = np.zeros((len(words), self.dim), dtype = np.uint32)
-
-        # These are the uint32 ways of writing 0 and negative 0.
-        vals = np.array([0, 0, 2**31], np.uint32)
-        
-        for i, word in enumerate(words):
-            scores[i] = vals[self.hash_string(word)]
-            
-        scores = np.tile(scores, len(vals)).transpose()
-        zero_mask = np.zeros_like(scores)
-        # I used uint to write the binary of a float.
-        counts.dtype = np.uint32
-
-        # Invert all the bits
-        np.bitwise_xor(scores, zero_mask, scores)
-        np.bitwise_xor(scores, counts, scores)
-
-        scores.dtype = np.float32
-        values = np.sum(scores, axis = 1)
         return values
             
     def hash_all_substrings(self, string,depth=0):
