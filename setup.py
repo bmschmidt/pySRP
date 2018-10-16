@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(name='SRP',
       packages=["SRP"],
-      version='0.2.0',
+      version='1.0.0',
       description="Run stable random projections.",
       long_description = open("README.rst").readlines(),
       url="http://github.com/bmschmidt/SRP",
