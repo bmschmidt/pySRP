@@ -16,7 +16,6 @@ class ReadAndWrite(unittest.TestCase):
                 ("fü",array2),
                 ("stop",array2)]
         
-
     def test_entrance_format(self):
         with SRP.Vector_file("test.bin", dims=3, mode="w") as testfile:
             for row in self.test_set:
@@ -76,7 +75,15 @@ class BasicHashing(unittest.TestCase):
             hello_world.tolist(),
             np.array([0.,  0.,  2.,  0.,  2.,  0.]).tolist()
             )
-
+        
+    def test_dtype(self):
+        hasher = SRP.SRP(6)
+        hello_world = hasher.stable_transform("hello world", log=False)
+        self.assertEqual(
+            hello_world.dtype,
+            np.float32)
+        
+        
     def test_wordcounts_unicode(self):
         hasher = SRP.SRP(160)
 
