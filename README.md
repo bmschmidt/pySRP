@@ -6,6 +6,19 @@ These create interchangeable, data-agnostic vectorized representations of text s
 
 You may want to use them in concert with the pre-distributed Hathi SRP features.
 
+## Installation
+
+
+Python 3
+```bash
+pip3 install git+git://github.com/bmschmidt/pySRP.git
+```
+
+Python 2
+```bash
+pip install git+git://github.com/bmschmidt/pySRP.git
+```
+
 ## Usage
 
 Use the SRP class to build an object to perform transformations.
