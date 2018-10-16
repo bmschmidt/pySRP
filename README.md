@@ -19,7 +19,23 @@ Python 2
 pip install git+git://github.com/bmschmidt/pySRP.git
 ```
 
+
+
 ## Usage
+
+### Examples
+
+See the [docs folder](https://github.com/bmschmidt/pySRP/tree/master/docs)
+for some IPython notebooks demonstrating:
+
+* [Taking a subset of the full Hathi collection (100,000 works of fiction) based on
+identifiers, and exploring the major clusters within fiction.](https://github.com/bmschmidt/pySRP/blob/master/docs/Build%20Fiction%20Set.ipynb)
+* [Building a UMAP embedding of a large collection for further exploration]
+* [Creating a new SRP representation of text files and plotting dimensionality reductions of them by language and time](https://github.com/bmschmidt/pySRP/blob/master/docs/Hash%20a%20corpus%20of%20text%20files%20into%20SRP%20space.ipynb)
+* [Searching for copies of one set of books in the full HathiTrust collection, and using Hathi metadata to identify duplicates and find errors in local item descriptions.](https://github.com/bmschmidt/pySRP/blob/master/docs/Find%20Text%20Lab%20Books%20in%20Hathi.ipynb)
+* [Training a classifier based on library metadata using TensorFlow, and then applyinig that classification to other sorts of text.](https://github.com/bmschmidt/pySRP/blob/master/docs/Classification%20Using%20Tensorflow%20Estimators.ipynb)
+
+### Basic Usage
 
 Use the SRP class to build an object to perform transformations.
 
