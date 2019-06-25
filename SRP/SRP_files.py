@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import warnings
 import os
+import collections
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
@@ -393,9 +394,25 @@ class Vector_file(object):
 
     def __getitem__(self, label):
         self._build_offset_lookup()
-        needed_position = self._offset_lookup[label]
-        self.file.seek(needed_position)
-        return self._read_binary_row()
+        
+        if isinstance(label, collections.MutableSequence):
+            is_iterable = True
+        else:
+            is_iterable = False
+            label = [label]
+
+        vecs = []
+        # Will fail on any missing labels
+        for l in label:
+            needed_position = self._offset_lookup[l]
+            self.file.seek(needed_position)
+            vec = self._read_binary_row()
+            vecs.append(vec)
+    
+        if is_iterable:
+            return np.stack(vecs)
+        else:
+            return vecs[0]
 
     def _read_binary_row(self):
         binary_len = self.precision * self.vector_size

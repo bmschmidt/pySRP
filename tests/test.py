@@ -48,13 +48,24 @@ class ReadAndWrite(unittest.TestCase):
         foo = SRP.Vector_file("test.bin",mode="r")
         self.assertTrue(foo.vocab_size==4)
 
+        # Test Iteration
         read_in_values = dict()
         for (i,(name,array)) in enumerate(foo):
             read_in_values[name] = array
             (comp_name,comp_array) = self.test_set[i]
             self.assertEqual(comp_name,name)
             self.assertEqual(array.tolist(),comp_array.tolist())
-            
+        
+        # Individual Vec Getter
+        keys = [i for i, a in self.test_set]
+        for i, key in enumerate(keys):
+            vec = foo[key]
+            np.testing.assert_array_almost_equal(vec, self.test_set[i][1])
+        
+        # List Vec Getter
+        vecs = foo[keys]
+        self.assertEqual(vecs.shape, (len(keys), foo.dims))
+        
         foo.close()
         
         self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
