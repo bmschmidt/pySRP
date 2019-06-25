@@ -142,24 +142,33 @@ class Vector_file(object):
         """
         if self.mode != "a":
             raise IOError("Can only repair when in append mode")
-        self._preload_metadata()
+        
         # This also sets the pointer to the front.
+        self._preload_metadata()
         self.nrows = 0
-        self.remaining_words = float("Inf")
+        # Avoid breaking the loop.
+
         previous_start = self.file.tell()
+
         while True:
             try:
-                _, _ = self.next()
+                _, _ = self._next_line()
             except StopIteration:
                 break
+            except RuntimeError:
+                break
             except UnicodeDecodeError:
+                break
+            except ValueError:
                 break
             self.nrows += 1
             if self.nrows % 100000 == 0:
                 print("{} read".format(self.nrows))
             previous_start = self.file.tell()
+        print("Recovered {} rows".format(self.nrows))
         self.file.truncate(previous_start)
         self._rewrite_header()
+        
 
     def concatenate_file(self, filename):
         """
@@ -227,10 +236,11 @@ class Vector_file(object):
     def _recover_from_corruption(self):
         starting = self.pos
         self.debug_mode = True
+        iterator = self._iter__()
         for i in range(2000000):
             self.file.seek(starting + i)
             try:
-                gah = self.next()
+                gah = iterator.__next__()
                 safe_pos = self.pos
                 for n in range(10):
                     # Make sure things are relatively straightforward from here on out.
@@ -240,6 +250,8 @@ class Vector_file(object):
                 return True
             except StopIteration:
                 pass
+            except RuntimeError:
+                break            
         print("Encountered corrupted data with {} words left and unable to recover at all".format(
             self.remaining_words))
         raise StopIteration
@@ -418,16 +430,18 @@ class Vector_file(object):
 
         # Always preload the metadata so you can iterate multiple times.
         self._preload_metadata()
-        
+
         while True:
             self.remaining_words = self.remaining_words-1
             if self.remaining_words <= -1:
                 # Allow breaking out of the loop early.
                 return
-            word = self._read_row_name()
-            weights = self._read_binary_row()
-            yield (word, weights)
+            yield self._next_line()
 
+    def _next_line(self):
+        word = self._read_row_name()
+        weights = self._read_binary_row()        
+        return (word, weights)
 
 if __name__ == "__main__":
     run_arguments()

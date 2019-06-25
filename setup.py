@@ -8,9 +8,8 @@ setup(name='SRP',
       long_description = open("README.rst").readlines(),
       url="http://github.com/bmschmidt/SRP",
       author="Benjamin Schmidt",
-      author_email="b.schmidt@neu.edu",
+      author_email="bmschmidt@gmail.com",
       license="MIT",
-      # Copy the cgi-executable to a cgi-dir.
       classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Education',
