@@ -388,6 +388,9 @@ class Vector_file(object):
         self._preload_metadata()
         while len(self._offset_lookup) < self.vocab_size:
             label = self._read_row_name()
+            if not label:
+                raise Exception("Ran out of data when vocab suggests there "
+                                "should be more. Check for duplicate keys.")
             self._offset_lookup[label] = self.file.tell()
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
