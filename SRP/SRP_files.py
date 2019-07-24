@@ -447,12 +447,13 @@ class Vector_file(object):
                 keys = ks[i:(i + chunk_size)]
                 for key, row in zip(keys, self[keys]):
                     if safe:
-                        if np.linalg.norm(row) in [np.inf, 0, np.nan]:
+                        norm = np.linalg.norm(row)
+                        if np.isinf(norm) or np.isnan(norm) or norm == 0:
                             continue
                         if key == last_written:
                             continue
-                        last_written = key
-                        output.add_row(key, row)
+                    last_written = key
+                    output.add_row(key, row)
 
 
     def __getitem__(self, label):
