@@ -76,7 +76,8 @@ for (key,vector) in file:
 ```
 
 There are two other methods. One lets you read an entire matrix in at once.
-This may require lots of memory.
+This may require lots of memory. It returns a dictionary with two keys: 'matrix' (a numpy array)
+and 'names' (the row names).
 
 ```python
 all = SRP.Vector_file("hathivectors.bin").to_matrix()
@@ -86,13 +87,18 @@ all['names'][:5]
 
 The other lets you treat the file as a dictionary of keys. The first lookup
 may take a very long time; subsequent lookups will be fast *without* requiring
-you to load the vectors into memory.
+you to load the vectors into memory. To get a 1-dimensional representation of a book:
 
 ```python
 all = SRP.Vector_file("hathivectors.bin")
 all['gri.ark:/13960/t3032jj3n']
 ```
 
+You can also, thanks to Peter Organisciak, access multiple vectors at once this way by passing a list of identifiers. This returns a matrix with shape (2, 160) for a 160-dimensional representation.
+
+```python
+all[['gri.ark:/13960/t3032jj3n', 'hvd.1234532123']]
+```
 
 ### Writing to SRP files
 
