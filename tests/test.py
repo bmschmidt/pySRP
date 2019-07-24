@@ -16,8 +16,11 @@ class ReadAndWrite(unittest.TestCase):
                 ("foo2", array1),
                 ("fü", array2),
                 ("stop", array2)]
-
-    def make_testfile(self):
+    
+    
+    def make_testfile(self, array = None):
+        if array is None:
+            array = self.test_set
         with SRP.Vector_file("test.bin", dims=3, mode="w") as testfile:
             for row in self.test_set:
                 if row[0] == "stop":
@@ -25,6 +28,14 @@ class ReadAndWrite(unittest.TestCase):
                 testfile.add_row(*row)
         self.assertTrue(testfile.nrows==3)
 
+
+    def test_sorting(self):
+        self.make_testfile(reversed(self.test_set))
+        with SRP.Vector_file("test.bin") as fin:
+            fin.sort("test2.bin")
+        with SRP.Vector_file("test2.bin") as f2:
+            rows = [k for (k, v) in f2]
+        self.assertEqual(rows, [t[0] for t in self.test_set[:3]])
         
     def test_entrance_format(self):
         self.make_testfile()
@@ -33,7 +44,7 @@ class ReadAndWrite(unittest.TestCase):
         with SRP.Vector_file("test.bin", dims=3, mode="a") as testfile2:
             testfile2.add_row(*self.test_set[3])
 
-        self.assertTrue(testfile2.nrows==4)
+        self.assertTrue(testfile2.nrows == 4)
         
 
     def test_for_concatenation_warnings(self):
@@ -83,7 +94,8 @@ class ReadAndWrite(unittest.TestCase):
         # List Vec Getter
         vecs = foo[keys]
         self.assertEqual(vecs.shape, (len(keys), foo.dims))
-        
+        for i in range(len(keys)):
+            np.testing.assert_array_almost_equal(vecs[i], self.test_set[i][1])
         foo.close()
         
         self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())

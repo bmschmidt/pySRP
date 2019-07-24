@@ -5,6 +5,7 @@ import numpy as np
 import warnings
 import os
 import collections
+import random
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
@@ -405,7 +406,56 @@ class Vector_file(object):
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
 
+    def sort(self, destination, sort = "names", safe = True, chunk_size = 2000):
+        """
+        This method sorts a vector file by its keys without reading it into memory.
+
+        It also cleans 
+
+        destination: A new file to be written.
+
+        sort: one of 'names' (default sort by the filenames), 'random' 
+        (sort randomly), or 'none' (keep the current order)
+
+        safe: whether to check for (and eliminate) duplicate keys and 
+
+        chunk_size: How many vectors to read into memory at a time. Larger numbers
+        may improve performance, especially on hard drives,
+        by keeping the disk head from moving around.
+        """
+        
+        self._build_offset_lookup()
+        ks = list(self._offset_lookup.keys())
+        if sort == 'names':
+            ks.sort()
+        elif sort == 'random':
+            random.shuffle(ks)
+        elif sort == 'none':
+            pass
+        else:
+            raise NotImplementedError("sort type must be one of [names, random, none]")
+        # Chunk size matters because we can pull the vectors
+        # from the disk in order within each chunk.
+
+        last_written = None
+        with Vector_file(destination,
+                         dims = self.dims,
+                         mode = "w",
+                         precision = self.precision) as output:
+            for i in range(0, len(ks), chunk_size):
+                keys = ks[i:(i + chunk_size)]
+                for key, row in zip(keys, self[keys]):
+                    if safe:
+                        if np.linalg.norm(row) in [np.inf, 0, np.nan]:
+                            continue
+                        if key == last_written:
+                            continue
+                        last_written = key
+                        output.add_row(key, row)
+
+
     def __getitem__(self, label):
+        
         self._build_offset_lookup()
         
         if isinstance(label, MutableSequence):
@@ -416,11 +466,18 @@ class Vector_file(object):
 
         vecs = []
         # Will fail on any missing labels
-        for l in label:
-            needed_position = self._offset_lookup[l]
-            self.file.seek(needed_position)
-            vec = self._read_binary_row()
-            vecs.append(vec)
+
+        # Prefill and sort so that any block are done in disk-order.
+        # This may make a big difference if you're on a tape drive!
+        
+        vecs = np.zeros((len(label), self.vector_size), '<f4')
+        elements = [(self._offset_lookup[l], i) for i, l in enumerate(label)]
+        elements.sort()
+
+        for offset, i in elements:
+            self.file.seek(offset)            
+            vecs[i] = self._read_binary_row()
+
     
         if is_iterable:
             return np.stack(vecs)
