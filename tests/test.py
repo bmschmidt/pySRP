@@ -6,38 +6,56 @@ from future.utils import iteritems
 import SRP
 import numpy as np
 import unittest
+import warnings
 
 class ReadAndWrite(unittest.TestCase):
     array1 = np.array([1,2,3],'<f4')
     array2 = np.array([3,2,1],'<f4')
     # Dummy values for file testing.
-    test_set = [("foo",array1),
-                ("foo2",array1),
-                ("fü",array2),
-                ("stop",array2)]
-        
-    def test_entrance_format(self):
+    test_set = [("foo", array1),
+                ("foo2", array1),
+                ("fü", array2),
+                ("stop", array2)]
+
+    def make_testfile(self):
         with SRP.Vector_file("test.bin", dims=3, mode="w") as testfile:
             for row in self.test_set:
                 if row[0] == "stop":
                     continue
                 testfile.add_row(*row)
+        self.assertTrue(testfile.nrows==3)
 
-        testfile2 = SRP.Vector_file("test.bin", dims=3, mode="a")
-        testfile2.add_row(*self.test_set[3])
-        testfile2.close()
+        
+    def test_entrance_format(self):
+        self.make_testfile()
+
+        
+        with SRP.Vector_file("test.bin", dims=3, mode="a") as testfile2:
+            testfile2.add_row(*self.test_set[3])
+
         self.assertTrue(testfile2.nrows==4)
         
-    
-    def test_creation_and_reading(self):
-        testfile = SRP.Vector_file("test.bin", dims=3, mode="w")
-        for row in self.test_set:
-            if row[0] == "stop":
-                continue
-            testfile.add_row(*row)
 
-        self.assertTrue(testfile.nrows==3)
-        testfile.close()
+    def test_for_concatenation_warnings(self):
+        self.make_testfile()
+
+        
+        with SRP.Vector_file("test2.bin", dims=3, mode="a") as a:
+            a.concatenate_file("test.bin")
+            a.concatenate_file("test.bin")
+
+            
+        with SRP.Vector_file('test2.bin') as f:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                # Trigger a warning.
+                f['foo']
+                # Verify some things
+                assert "duplicate identifiers" in str(w[-1].message)
+        
+    def test_creation_and_reading(self):
+        self.make_testfile()
+
 
         testfile2 = SRP.Vector_file("test.bin", dims=3, mode="a")
         testfile2.add_row(*self.test_set[3])

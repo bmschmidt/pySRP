@@ -8,8 +8,10 @@ import collections
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
+    from collections.abc import MutableSequence
 else:
     (py2, py3) = True, False
+    from collections import MutableSequence
 
 
 def textset_yielder(inputfile):
@@ -179,9 +181,9 @@ class Vector_file(object):
         In theory, it should be possible to add a large file to a smaller one.
         """
 
-        new_file = Vector_file(filename, dims=self.dims, mode="r", precision = self.precision)
-        for (id, array) in new_file:
-            self.add_row(id, array)
+        with Vector_file(filename, dims=self.dims, mode="r", precision = self.precision) as new_file:
+            for (id, array) in new_file:
+                self.add_row(id, array)
 
     def _rewrite_header(self):
         """
@@ -224,7 +226,10 @@ class Vector_file(object):
         return {"names": labels, "matrix": matrix}
 
     def _open_for_appending(self):
-        self.file = open(self.filename, "rb+")
+        try:
+            self.file = open(self.filename, "rb+")
+        except FileNotFoundError:
+            return self._open_for_writing()
         self._preload_metadata()
         self.file.seek(0, 2)
         self.nrows = self.vocab_size
@@ -386,16 +391,24 @@ class Vector_file(object):
             return
         self._offset_lookup = {}
         self._preload_metadata()
-        while len(self._offset_lookup) < self.vocab_size:
+        # Add warning for duplicate ids.
+        i = 0
+        while i < self.vocab_size:
             label = self._read_row_name()
+            if label in self._offset_lookup:
+                warnings.warn(
+                    "Warning: this vector file has duplicate identifiers " + 
+                    "(words) The last vector representation of each " + 
+                    "identifier will be used, and earlier ones ignored.")
             self._offset_lookup[label] = self.file.tell()
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
+            i += 1
 
     def __getitem__(self, label):
         self._build_offset_lookup()
         
-        if isinstance(label, collections.MutableSequence):
+        if isinstance(label, MutableSequence):
             is_iterable = True
         else:
             is_iterable = False
