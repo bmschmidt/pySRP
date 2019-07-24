@@ -13,7 +13,8 @@ if sys.version_info[0] == 3:
 else:
     (py2, py3) = True, False
     from collections import MutableSequence
-
+    # Kludgy
+    FileNotFoundError = IOError
 
 def textset_yielder(inputfile):
     for line in open(inputfile, "r"):
