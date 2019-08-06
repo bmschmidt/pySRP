@@ -426,6 +426,9 @@ class Vector_file(object):
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
+            
+        if self.offset_cache:
+            self._offset_lookup.commit()
 
     def __getitem__(self, label):
         self._build_offset_lookup()
