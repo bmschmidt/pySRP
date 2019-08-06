@@ -5,7 +5,7 @@ import numpy as np
 import warnings
 import os
 import collections
-import shelve
+from sqlitedict import SqliteDict
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
@@ -129,13 +129,14 @@ class Vector_file(object):
         self.precision = precision
         self.float_format = '<f{}'.format(precision)
         self.offset_cache = offset_cache
-        if self.offset_cache and os.path.exists(self.filename + '.db.dat'):
+        if self.offset_cache and os.path.exists(self.filename + '.db'):
             if (self.mode == 'w'):
-                # Leave _build_offset_lookup to built the reference
-                os.remove(self.filename + '.db.dat')
-                os.remove(self.filename + '.db.dir')
+                # Leave _build_offset_lookup to build the reference
+                os.remove(self.filename + '.db')
             else:
-                self._offset_lookup = shelve.open(self.filename + '.db', flag=('c' if self.mode=='a' else 'r'))
+                self._offset_lookup = SqliteDict(self.filename + '.db',
+                                                 flag=('c' if self.mode=='a' else 'r'),
+                                                 encode=int, decode=int)
     
         if self.mode == "r":
             self._open_for_reading()
@@ -406,7 +407,8 @@ class Vector_file(object):
         
         if self.offset_cache:
             # Force new database ('n')
-            self._offset_lookup = shelve.open(self.filename + '.db', flag='n')
+            self._offset_lookup = SqliteDict(self.filename + '.db', encode=int, decode=int,
+                                             autocommit=False, journal_mode ='OFF')
         else:
             self._offset_lookup = {}
             
