@@ -6,6 +6,12 @@ import warnings
 import os
 import collections
 import random
+import regex as re
+import re as original_re
+
+
+regex_type = type(re.compile("."))
+original_regex_type = type(original_re.compile("."))
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
@@ -356,9 +362,6 @@ class Vector_file(object):
         self.file.seek(body_start)
 
         
-    def __getitem__(self):
-        pass
-
     def _read_row_name(self):
         buffer = []
         while True:
@@ -455,10 +458,32 @@ class Vector_file(object):
                     last_written = key
                     output.add_row(key, row)
 
-
-    def __getitem__(self, label):
+    def _regex_search(self, regex):
         
         self._build_offset_lookup()
+        values = [(i, k) for k, i in self._offset_lookup.items() if re.search(regex, k)]
+        # Sort to ensure values are returned in disk order.
+        values.sort()
+        for i, k in values:
+            yield (k, self[k])
+        
+    def __getitem__(self, label):
+        """
+        Attributes can be accessed in three ways.
+    
+
+        With a string: this returns just the vector for that string.
+        With a list of strings: this returns a multidimensional array for each query passed.
+          If any of the requested items do not exist, this will fail.
+
+        """
+        self._build_offset_lookup()
+        
+        if isinstance(label, original_regex_type):
+            label = re.compile(label.pattern)
+            
+        if isinstance(label, regex_type):
+            return self._regex_search(label)
         
         if isinstance(label, MutableSequence):
             is_iterable = True
