@@ -467,6 +467,14 @@ class Vector_file(object):
         for i, k in values:
             yield (k, self[k])
         
+
+        self._build_offset_lookup()
+        values = [(i, k) for k, i in self._offset_lookup.items() if re.search(regex, k)]
+        # Sort to ensure values are returned in disk order.
+        values.sort()
+        for i, k in values:
+            yield (k, self[k])
+        
     def __getitem__(self, label):
         """
         Attributes can be accessed in three ways.
@@ -477,8 +485,17 @@ class Vector_file(object):
           If any of the requested items do not exist, this will fail.
         With a single *compiled* regular expression (from either the regex or re module). This
           will return an iterator over key, value pairs of keys that match the regex.
-        """
+        """        
+
         self._build_offset_lookup()
+        
+        if isinstance(label, original_regex_type):
+            # Convert from re type since that's
+            # more standard
+            label = re.compile(label.pattern)
+            
+        if isinstance(label, regex_type):
+            return self._regex_search(label)
         
         if isinstance(label, original_regex_type):
             label = re.compile(label.pattern)
