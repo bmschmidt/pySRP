@@ -1,8 +1,6 @@
 #### -*- coding: utf-8 -*-
-# This code should run under either 2.7 or 3.x
 
 from __future__ import absolute_import, division, print_function, unicode_literals
-from future.utils import iteritems
 import hashlib
 import numpy as np
 import regex
@@ -146,7 +144,7 @@ class SRP(object):
             by passing words = [string], counts=[1]
             """
             subCounts = self.tokenize(words[i])
-            for (part,partCounts) in iteritems(subCounts):
+            for (part,partCounts) in subCounts.items():
                 part = regex.sub(u'\d',"#",part)
                 addition = counts[i]*partCounts
                 try:
@@ -157,7 +155,7 @@ class SRP(object):
         counts = np.zeros(len(full),"<f4")
         if not unzip:
             return full
-        for i,(k,v) in enumerate(iteritems(full)):
+        for i,(k,v) in enumerate(full.items()):
             words.append(k)
             counts[i] = v
         return (words,counts)
