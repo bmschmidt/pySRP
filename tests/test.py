@@ -1,12 +1,11 @@
 #### -*- coding: utf-8 -*-
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.utils import iteritems
-
 import SRP
 import numpy as np
 import unittest
 import warnings
+from pathlib import Path
+import tempfile
 
 class ReadAndWrite(unittest.TestCase):
     array1 = np.array([1,2,3],'<f4')
@@ -27,7 +26,19 @@ class ReadAndWrite(unittest.TestCase):
                     continue
                 testfile.add_row(*row)
         self.assertTrue(testfile.nrows==3)
-
+        with tempfile.TemporaryDirectory() as dir:
+            fout = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
+            for i in range(3):
+                for j in range(5):
+                    fout.add_row(f"file_{i}-part-{j}", np.array([i, j], '<f4'))
+            fout.close()
+            newview = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
+            for k, v in newview.find_prefix("file_1", "-"):
+                self.assertEqual(v[0], np.float32(1))
+            newview.add_row('file_100-part_302', np.array([100, 302], '<f4'))
+            fname, row = newview.find_prefix("file_100")[0]
+            self.assertEqual(fname, 'file_100-part_302')
+            newview.close()
 
     def test_sorting(self):
         self.make_testfile(reversed(self.test_set))
@@ -43,19 +54,11 @@ class ReadAndWrite(unittest.TestCase):
         
         with SRP.Vector_file("test.bin", dims=3, mode="a") as testfile2:
             testfile2.add_row(*self.test_set[3])
-
-        self.assertTrue(testfile2.nrows == 4)
-        
-
-    def test_for_concatenation_warnings(self):
-        self.make_testfile()
-
-        
+            
         with SRP.Vector_file("test2.bin", dims=3, mode="a") as a:
             a.concatenate_file("test.bin")
             a.concatenate_file("test.bin")
-
-            
+         
         with SRP.Vector_file('test2.bin') as f:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
@@ -64,6 +67,25 @@ class ReadAndWrite(unittest.TestCase):
                 # Verify some things
                 assert "duplicate identifiers" in str(w[-1].message)
         
+        self.assertTrue(testfile2.nrows == 4)
+        
+    def test_prefix_lookup(self):
+        with tempfile.TemporaryDirectory() as dir:
+            fout = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
+            for i in range(3):
+                for j in range(5):
+                    fout.add_row(f"file_{i}-part-{j}", np.array([i, j], '<f4'))
+            fout.close()
+            newview = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
+            for k, v in newview.find_prefix("file_1", "-"):
+                self.assertEqual(np.float32(1), v[0])
+            newview.add_row('file_100-part_302', np.array([100, 302], '<f4'))
+            fname, row = newview.find_prefix("file_100")[0]
+            self.assertEqual(fname, 'file_100-part_302')
+            newview.close()
+        
+
+   
     def test_creation_and_reading(self):
         self.make_testfile()
 
@@ -198,6 +220,8 @@ class BasicHashing(unittest.TestCase):
         h1 = hasher.stable_transform(string1, log=False, standardize=True)
         h2 = hasher.stable_transform(string1, log=False, standardize=True)        
         self.assertEqual(h1.tolist(), h2.tolist())
-        
+
+
+
 if __name__=="__main__":
     unittest.main()

@@ -8,7 +8,7 @@ import collections
 import random
 import regex as re
 import re as original_re
-
+from collections import defaultdict
 
 regex_type = type(re.compile("."))
 original_regex_type = type(original_re.compile("."))
@@ -292,20 +292,17 @@ class Vector_file(object):
         if len(array) != self.dims:
             raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(
                 self.vector_size, self.dims))
-        
-        if py2:
-            try:
-                self.file.write(identifier)
-            except UnicodeEncodeError:
-                # Don't do this at first to allow writing of already encoded unicode
-                self.file.write(identifier.encode("utf-8"))
-            self.file.write(b" ")
-            self.file.write(array.tobytes())
-            self.file.write(b"\n")
-        if py3:
-            self.file.write(identifier.encode("utf-8") + b" ")
-            self.file.write(array.tobytes())
-            self.file.write(b"\n")
+        self.file.write(identifier.encode("utf-8") + b" ")
+        try:
+            self._prefix_lookup[identifier.split(self.sep, 1)[0]].append((identifier, self.file.tell()))
+        except AttributeError:
+            pass
+        try:
+            self._offset_lookup[identifier] = self.file.tell()
+        except AttributeError:
+            pass
+        self.file.write(array.tobytes())
+        self.file.write(b"\n")
         self.nrows += 1
 
     def close(self):
@@ -376,36 +373,35 @@ class Vector_file(object):
                 # ignore newlines in front of words (some binary files have em)
                 buffer.append(ch)
         try:
-            word = b''.join(buffer).decode("utf-8")
-        except TypeError:
-            # We're in python 3
-            word = ''.join(word)
-        except UnicodeDecodeError:
-            if not hasattr(self, "debug_mode"):
-                self._recover_from_corruption()
-            else:
-                raise
+            word = b''.join(buffer).decode()
         except:
             print("Couldn't export:")
-            print(word)
+            print(buffer)
             raise
         return word
 
-    def _build_offset_lookup(self, force=False):
+    
+    def _build_offset_lookup(self, force=False, sep = None):
         if hasattr(self, "_offset_lookup") and not force:
             return
-        self._offset_lookup = {}
+        if sep is not None:
+            self._prefix_lookup = defaultdict(list)
+        else:
+            self._offset_lookup = {}
         self._preload_metadata()
         # Add warning for duplicate ids.
         i = 0
         while i < self.vocab_size:
             label = self._read_row_name()
-            if label in self._offset_lookup:
+            if sep is None and label in self._offset_lookup:
                 warnings.warn(
                     "Warning: this vector file has duplicate identifiers " + 
                     "(words) The last vector representation of each " + 
                     "identifier will be used, and earlier ones ignored.")
-            self._offset_lookup[label] = self.file.tell()
+            if sep:
+                self._prefix_lookup[label.split(sep, 1)[0]].append((label, self.file.tell()))
+            else:
+                self._offset_lookup[label] = self.file.tell()                
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
@@ -529,6 +525,37 @@ class Vector_file(object):
         else:
             return vecs[0]
 
+    def find_prefix(self, prefix, sep = "-"):
+        """
+        Uses as an on-disk loca okup to return all rows where the text before 'sep' is equal
+        to prefix.
+
+        Once used with a prefix, you **cannot** change the prefix on the file.
+        """        
+
+        try:
+            # You're locked in.
+            assert(sep == self._prefix_sep)
+        except AttributeError:
+            self._prefix_sep = sep
+
+        self._build_offset_lookup(sep = sep)
+        
+        # Will fail on any missing labels
+
+        # Prefill and sort so that any block are done in disk-order.
+        # This may make a big difference if you're on a tape drive!
+        
+        elements = self._prefix_lookup[prefix]
+        
+        output = []
+        
+        for full_name, offset in elements:
+            self.file.seek(offset)
+            output.append((full_name, self._read_binary_row()))
+            
+        return output
+        
     def _read_binary_row(self):
         binary_len = self.precision * self.vector_size
         self.pos = self.file.tell()
