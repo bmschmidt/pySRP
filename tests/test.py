@@ -17,117 +17,120 @@ class ReadAndWrite(unittest.TestCase):
                 ("stop", array2)]
     
     
-    def make_testfile(self, array = None):
+    def make_testfile(self, path, array = None):
         if array is None:
             array = self.test_set
-        with SRP.Vector_file("test.bin", dims=3, mode="w") as testfile:
+            
+        with SRP.Vector_file(path, dims=3, mode="w") as testfile:
             for row in self.test_set:
                 if row[0] == "stop":
                     continue
                 testfile.add_row(*row)
-        self.assertTrue(testfile.nrows==3)
-        with tempfile.TemporaryDirectory() as dir:
-            fout = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
-            for i in range(3):
-                for j in range(5):
-                    fout.add_row(f"file_{i}-part-{j}", np.array([i, j], '<f4'))
-            fout.close()
-            newview = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
-            for k, v in newview.find_prefix("file_1", "-"):
-                self.assertEqual(v[0], np.float32(1))
-            newview.add_row('file_100-part_302', np.array([100, 302], '<f4'))
-            fname, row = newview.find_prefix("file_100")[0]
-            self.assertEqual(fname, 'file_100-part_302')
-            newview.close()
 
     def test_sorting(self):
-        self.make_testfile(reversed(self.test_set))
-        with SRP.Vector_file("test.bin") as fin:
-            fin.sort("test2.bin")
-        with SRP.Vector_file("test2.bin") as f2:
-            rows = [k for (k, v) in f2]
-        self.assertEqual(rows, [t[0] for t in self.test_set[:3]])
+        with tempfile.TemporaryDirectory() as dir:
+            self.make_testfile(Path(dir, "test.bin"), reversed(self.test_set))
+            with SRP.Vector_file(Path(dir, "test.bin")) as fin:
+                fin.sort(Path(dir, "test2.bin"))
+            with SRP.Vector_file(Path(dir, "test2.bin")) as f2:
+                rows = [k for (k, v) in f2]
+            self.assertEqual(rows, [t[0] for t in self.test_set[:3]])
         
     def test_entrance_format(self):
-        self.make_testfile()
+        with tempfile.TemporaryDirectory() as dir:
+            self.make_testfile(Path(dir, "test.bin"))
+                
+            with SRP.Vector_file(Path(dir, "test.bin"), dims=3, mode="a") as testfile2:
+                testfile2.add_row(*self.test_set[3])
 
-        
-        with SRP.Vector_file("test.bin", dims=3, mode="a") as testfile2:
-            testfile2.add_row(*self.test_set[3])
-            
-        with SRP.Vector_file("test2.bin", dims=3, mode="a") as a:
-            a.concatenate_file("test.bin")
-            a.concatenate_file("test.bin")
-         
-        with SRP.Vector_file('test2.bin') as f:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                # Trigger a warning.
-                f['foo']
-                # Verify some things
-                assert "duplicate identifiers" in str(w[-1].message)
-        
-        self.assertTrue(testfile2.nrows == 4)
+            with SRP.Vector_file(Path(dir, "test2.bin"), dims=3, mode="a") as a:
+                a.concatenate_file(Path(dir, "test.bin"))
+                a.concatenate_file(Path(dir, "test.bin"))
+
+            with SRP.Vector_file(Path(dir, 'test2.bin')) as f:
+                self.assertEqual(f.vocab_size, 8)
+                with warnings.catch_warnings(record=True) as w:
+                    warnings.simplefilter("always")
+                    # Trigger a warning.
+                    f['foo']
+                    # Verify some things
+                    assert "duplicate identifiers" in str(w[-1].message)
+
+            self.assertTrue(testfile2.nrows == 4)
         
     def test_prefix_lookup(self):
         with tempfile.TemporaryDirectory() as dir:
-            fout = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
-            for i in range(3):
-                for j in range(5):
-                    fout.add_row(f"file_{i}-part-{j}", np.array([i, j], '<f4'))
-            fout.close()
+            with SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2) as fout:
+                for i in range(3):
+                    for j in range(5):
+                        fout.add_row(f"file_{i}-part-{j}", np.array([i, j], '<f4'))
+
             newview = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
             for k, v in newview.find_prefix("file_1", "-"):
                 self.assertEqual(np.float32(1), v[0])
             newview.add_row('file_100-part_302', np.array([100, 302], '<f4'))
+            newview.flush()
             fname, row = newview.find_prefix("file_100")[0]
             self.assertEqual(fname, 'file_100-part_302')
             newview.close()
-        
+            
 
-   
+    def test_null_vectors(self):
+        """
+        Not clear that these *should* be supported, but apparently they are.
+        """
+        with tempfile.TemporaryDirectory() as dir:
+            p = Path(dir, "test.bin")
+            fout = SRP.Vector_file(p, dims = 0, mode = 'a')
+            fout.add_row("good", np.array([], '<f4'))
+            fout.flush()
+            with p.open() as fin:
+                self.assertEqual(fin.read(), '000000001 00000\ngood \n')
+            fout.close()
+            
     def test_creation_and_reading(self):
-        self.make_testfile()
+        with tempfile.TemporaryDirectory() as dir:
+            testloc = Path(dir, "test.bin")
+            self.make_testfile(testloc)
 
+            testfile2 = SRP.Vector_file(Path(dir, "test.bin"), dims=3, mode="a")
+            testfile2.add_row(*self.test_set[3])
+            testfile2.close()
+            self.assertTrue(testfile2.nrows==4)
 
-        testfile2 = SRP.Vector_file("test.bin", dims=3, mode="a")
-        testfile2.add_row(*self.test_set[3])
-        testfile2.close()
-        self.assertTrue(testfile2.nrows==4)
+            reloaded = SRP.Vector_file(Path(dir, "test.bin"), mode="r")
+            self.assertTrue(reloaded.vocab_size==4)
 
-        
-        foo = SRP.Vector_file("test.bin",mode="r")
-        self.assertTrue(foo.vocab_size==4)
+            # Test Iteration
+            read_in_values = dict()
+            for (i, (name, array)) in enumerate(reloaded):
+                read_in_values[name] = array
+                (comp_name, comp_array) = self.test_set[i]
+                self.assertEqual(comp_name, name)
+                self.assertEqual(array.tolist(), comp_array.tolist())
 
-        # Test Iteration
-        read_in_values = dict()
-        for (i,(name,array)) in enumerate(foo):
-            read_in_values[name] = array
-            (comp_name,comp_array) = self.test_set[i]
-            self.assertEqual(comp_name,name)
-            self.assertEqual(array.tolist(),comp_array.tolist())
-        
-        # Individual Vec Getter
-        keys = [i for i, a in self.test_set]
-        for i, key in enumerate(keys):
-            vec = foo[key]
-            np.testing.assert_array_almost_equal(vec, self.test_set[i][1])
-        
-        # List Vec Getter
-        vecs = foo[keys]
-        self.assertEqual(vecs.shape, (len(keys), foo.dims))
-        for i in range(len(keys)):
-            np.testing.assert_array_almost_equal(vecs[i], self.test_set[i][1])
-        foo.close()
-        
-        self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
-        self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["fü"].tolist())
+            # Individual Vec Getter
+            keys = [i for i, a in self.test_set]
+            for i, key in enumerate(keys):
+                vec = reloaded[key]
+                np.testing.assert_array_almost_equal(vec, self.test_set[i][1])
+
+            # List Vec Getter
+            vecs = reloaded[keys]
+            self.assertEqual(vecs.shape, (len(keys), reloaded.dims))
+            for i in range(len(keys)):
+                np.testing.assert_array_almost_equal(vecs[i], self.test_set[i][1])
+            reloaded.close()
+
+            self.assertEqual(read_in_values["foo"].tolist(),read_in_values["foo2"].tolist())
+            self.assertFalse(read_in_values["foo2"].tolist()==read_in_values["fü"].tolist())
 
     def test_error_on_load(self):
-        testfile = SRP.Vector_file("test.bin", dims=3, mode="w")
-        with self.assertRaises(TypeError):
-            testfile.add_row("this is a space", self.array1)
-        testfile.close()
+        with tempfile.TemporaryDirectory() as dir:
+            testfile = SRP.Vector_file(Path(dir, "test.bin"), dims=3, mode="w")
+            with self.assertRaises(TypeError):
+                testfile.add_row("this is a space", self.array1)
+            testfile.close()
         
 class BasicHashing(unittest.TestCase):
     def test_ascii(self):

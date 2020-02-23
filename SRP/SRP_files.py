@@ -1,5 +1,3 @@
-from __future__ import print_function
-from __future__ import absolute_import, division, print_function, unicode_literals
 import sys
 import numpy as np
 import warnings
@@ -9,6 +7,7 @@ import random
 import regex as re
 import re as original_re
 from collections import defaultdict
+from pathlib import Path
 
 regex_type = type(re.compile("."))
 original_regex_type = type(original_re.compile("."))
@@ -65,7 +64,7 @@ def textset_to_srp(
     import SRP
 
     output = Vector_file(outputfile, dims=dim, mode="w")
-    hasher = SRP.SRP(dim=dim, )
+    hasher = SRP.SRP(dim=dim)
 
     if inputfile.endswith(".txt"):
         yielder = textset_yielder
@@ -88,7 +87,7 @@ class Vector_file(object):
     A class to manage binary files in the word2vec format.
     I've also adopted this as the binary SRP format.
 
-    One minor problem is that this format doesn't allow for spaces in
+    One problem is that this format doesn't allow for spaces in
     ID names.
 
     Initialized with a filename, a maximum number of rows to read,
@@ -135,11 +134,13 @@ class Vector_file(object):
         self.float_format = '<f{}'.format(precision)
         if self.mode == "r":
             self._open_for_reading()
-        if self.mode == "w":
+        elif self.mode == "w":
             self._open_for_writing()
-        if self.mode == "a":
+        elif self.mode == "a":
             self._open_for_appending()
-    
+        else:
+            raise NameError("Mode must be 'r', 'w', or 'a'.")
+        
     def __enter__(self):
         return self
 
@@ -199,24 +200,40 @@ class Vector_file(object):
         are stored.)
         """
         self.file.seek(0)
-        header = "{0:09d} ".format(self.nrows) + "{0:05d}\n".format(self.dims)
-        if py2:
-            self.file.write(header)
-        if py3:
-            self.file.write(header.encode("utf-8"))
+        header = "{:09d} {:05d}\n".format(self.nrows, self.dims)
+        self.file.write(header.encode("utf-8"))
         # Move pointer to end. Just in case.
         self.file.seek(0, 2)
 
     def _open_for_writing(self):
         self.nrows = 0
-        self.file = open(self.filename, "wb")
-        self._rewrite_header()
         self.vector_size = self.dims
+        self.file = open(self.filename, 'wb')
+        self._rewrite_header()
 
     def _open_for_reading(self):
         self.file = open(self.filename, 'rb')
         self._preload_metadata()
 
+    def _open_for_appending(self):
+
+        self.nrows = None
+        if not Path(self.filename).exists():
+            self._open_for_writing()
+            self.file.close()
+
+        self.file = open(self.filename, "rb+")
+        self._preload_metadata()
+        self.file.seek(0, 2)
+        if self.nrows is None:
+            self.nrows = self.vocab_size
+            
+        if self.dims != self.vector_size:
+            raise IndexError(
+                "The existing files is {} dimensions: unable to append"
+                " with {} dimensions as requested".format(
+                    self.vector_size, self.dims))
+        
     def to_matrix(self, unit_length=False, clean=False):
         """
         Returns the entire file as a matrix with names (wrapped in a dict).
@@ -233,19 +250,6 @@ class Vector_file(object):
             matrix[i] = row
         return {"names": labels, "matrix": matrix}
 
-    def _open_for_appending(self):
-        try:
-            self.file = open(self.filename, "rb+")
-        except FileNotFoundError:
-            return self._open_for_writing()
-        self._preload_metadata()
-        self.file.seek(0, 2)
-        self.nrows = self.vocab_size
-        if self.dims != self.vector_size:
-            raise IndexError(
-                "The existing files is {} dimensions: unable to append"
-                " with {} dimensions as requested".format(
-                    self.vector_size, self.dims))
 
     def _recover_from_corruption(self):
         starting = self.pos
@@ -318,20 +322,29 @@ class Vector_file(object):
 
     def _preload_metadata(self):
         """
-        A simplified version of the gensim API.
-
-        From https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py        
+        Portions from https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py    
         """
 
         counts = None
+
         self.file.seek(0)
-        header = self.file.readline()
+
+        header = b""
+        last = b""
+        while last != b"\n":
+            header += last
+            last = self.file.read(1)
+        
+        header = header.decode("utf-8")
         self.vocab_size, self.vector_size = map(
             int, header.split())  # throws for invalid file format
+        if self.vocab_size == 0 and self.mode == 'r':
+            warnings.warn(
+                "\nWARNING: dataset has 0 items. Try reloading with mode='a' and"
+                "running set.repair_file()\n")
         # Some shuffling to decide whether all the columns are going to be read.
         if self.dims < float("Inf") and self.dims > self.vector_size:
-            import sys
-            sys.stderr.write(
+            warnings.warn(
                 "WARNING: data has only {} columns but call requested top {}".format(
                     self.vector_size, self.dims))
         if self.dims == float("Inf") or self.dims == self.vector_size:
@@ -342,8 +355,11 @@ class Vector_file(object):
 
         self.remaining_words = min([self.vocab_size, self.max_rows])
 
-        self._check_if_half_precision()
-        
+#        try:
+            #self._check_if_half_precision()
+#        except StopIteration:
+#            pass
+
     def _check_if_half_precision(self):
         
         body_start = self.file.tell()        
@@ -355,15 +371,14 @@ class Vector_file(object):
             warning = "Average size is extremely large" + \
                "did you mean to specify 'precision = 2'?"
             warnings.warn(warning)
-        
-        self.file.seek(body_start)
+
 
         
     def _read_row_name(self):
         buffer = []
         while True:
             ch = self.file.read(1)
-            if not ch:
+            if not ch and self.remaining_words > 0:
                 print("Ran out of data with {} words left".format(
                     self.remaining_words))
                 return
@@ -470,6 +485,13 @@ class Vector_file(object):
         values.sort()
         for i, k in values:
             yield (k, self[k])
+
+    def flush(self):
+        """
+        Flushing requires rewriting the metadata at the head as well as flushing the file buffer.
+        """
+        self.file.flush()
+        self._rewrite_header()
         
     def __getitem__(self, label):
         """
@@ -484,7 +506,10 @@ class Vector_file(object):
         """        
 
         self._build_offset_lookup()
-        
+
+        if self.mode == 'a' or self.mode == 'w':
+            self.file.flush()
+            
         if isinstance(label, original_regex_type):
             # Convert from re type since that's
             # more standard
@@ -519,6 +544,8 @@ class Vector_file(object):
             self.file.seek(offset)            
             vecs[i] = self._read_binary_row()
 
+        # Move pointer to the end in case we're writing.
+        self.file.seek(0, 2)            
     
         if is_iterable:
             return np.stack(vecs)
@@ -533,6 +560,9 @@ class Vector_file(object):
         Once used with a prefix, you **cannot** change the prefix on the file.
         """        
 
+        if self.mode=='a' or self.mode == 'w':
+            self.file.flush()
+        
         try:
             # You're locked in.
             assert(sep == self._prefix_sep)
@@ -553,7 +583,10 @@ class Vector_file(object):
         for full_name, offset in elements:
             self.file.seek(offset)
             output.append((full_name, self._read_binary_row()))
-            
+
+        # Move pointer to the end in case we're writing.
+        self.file.seek(0, 2)
+        
         return output
         
     def _read_binary_row(self):
