@@ -11,6 +11,7 @@ from pathlib import Path
 
 regex_type = type(re.compile("."))
 original_regex_type = type(original_re.compile("."))
+from sqlitedict import SqliteDict
 
 if sys.version_info[0] == 3:
     (py2, py3) = False, True
@@ -110,7 +111,7 @@ class Vector_file(object):
        but still slower than an in-memory lookup.
     """
 
-    def __init__(self, filename, dims=float("Inf"), mode="r", max_rows=float("Inf"), precision = 4):
+    def __init__(self, filename, dims=float("Inf"), mode="r", max_rows=float("Inf"), precision = 4, offset_cache = False):
         """
         Creates an SRP object.
 
@@ -121,6 +122,8 @@ class Vector_file(object):
               end of an existing file)
         max_rows: clip the document to a fixed length. Best left unused.
         precision: bytes to use for each 
+        offset_cache: Whether to store the byte offset lookup information for vectors. By default,
+            this is False, which means the offset table is built on load and kept in memory.
         """
         
         self.filename = filename
@@ -132,6 +135,16 @@ class Vector_file(object):
             raise ValueError(e)
         self.precision = precision
         self.float_format = '<f{}'.format(precision)
+        self.offset_cache = offset_cache
+        if self.offset_cache and os.path.exists(self.filename + '.db'):
+            if (self.mode == 'w'):
+                # Leave _build_offset_lookup to build the reference
+                os.remove(self.filename + '.db')
+            else:
+                self._offset_lookup = SqliteDict(self.filename + '.db',
+                                                 flag=('c' if self.mode=='a' else 'r'),
+                                                 encode=int, decode=int)
+    
         if self.mode == "r":
             self._open_for_reading()
         elif self.mode == "w":
@@ -319,6 +332,8 @@ class Vector_file(object):
             self._rewrite_header()
 
         self.file.close()
+        if self.offset_cache:
+            self._offset_lookup.close()
 
     def _preload_metadata(self):
         """
@@ -399,10 +414,19 @@ class Vector_file(object):
     def _build_offset_lookup(self, force=False, sep = None):
         if hasattr(self, "_offset_lookup") and not force:
             return
+
         if sep is not None:
             self._prefix_lookup = defaultdict(list)
         else:
             self._offset_lookup = {}
+        
+        if self.offset_cache:
+            # Force new database ('n')
+            self._offset_lookup = SqliteDict(self.filename + '.db', encode=int, decode=int,
+                                             autocommit=False, journal_mode ='OFF')
+        else:
+            self._offset_lookup = {}
+            
         self._preload_metadata()
         # Add warning for duplicate ids.
         i = 0
@@ -420,6 +444,9 @@ class Vector_file(object):
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
+            
+        if self.offset_cache:
+            self._offset_lookup.commit()
 
     def sort(self, destination, sort = "names", safe = True, chunk_size = 2000):
         """
