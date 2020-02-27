@@ -415,14 +415,16 @@ class Vector_file(object):
 
     
     def _build_offset_lookup(self, force=False, sep = None):
-        if hasattr(self, "_offset_lookup") and not force:
+        if hasattr(self, "_offset_lookup") and not force and not sep:
+            return
+        if hasattr(self, "_prefix_lookup") and not force and sep:
             return
         
         if self.offset_cache and (sep is None):
             # Force new database ('n')
             self._offset_lookup = SqliteDict(self.filename + '.offset.db', encode=int, decode=int,
                                              autocommit=False, journal_mode ='OFF')
-        if self.offset_cache and (sep is not None):
+        elif self.offset_cache and (sep is not None):
             self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
                                              autocommit=False, journal_mode ='OFF')
         elif sep is not None:
