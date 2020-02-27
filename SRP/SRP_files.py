@@ -420,17 +420,10 @@ class Vector_file(object):
         if hasattr(self, "_prefix_lookup") and not force and sep:
             return
         
-        if self.offset_cache and (sep is None):
-            # Force new database ('n')
-            self._offset_lookup = SqliteDict(self.filename + '.offset.db', encode=int, decode=int,
-                                             autocommit=False, journal_mode ='OFF')
-        elif self.offset_cache and (sep is not None):
-            self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
-                                             autocommit=False, journal_mode ='OFF')
-        elif sep is not None:
-            self._prefix_lookup = defaultdict(list)
+        if sep is not None:
+            prefix_lookup = defaultdict(list)
         else:
-            self._offset_lookup = {}
+            offset_lookup = {}
             
         self._preload_metadata()
         # Add warning for duplicate ids.
@@ -445,20 +438,35 @@ class Vector_file(object):
             if sep:
                 key = label.split(sep, 1)[0]
                 loc = self.file.tell()
-                try:
-                    self._prefix_lookup[key] += [(label, loc)]
-                except KeyError:
-                    self._prefix_lookup[key] = [(label, loc)]
+                prefix_lookup[key].append((label, loc))
             else:
-                self._offset_lookup[label] = self.file.tell()                
+                offset_lookup[label] = self.file.tell()
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
             
-        if self.offset_cache and sep:
-            self._prefix_lookup.commit()
-        elif self.offset_cache:
-            self._offset_lookup.commit()
+        if self.offset_cache:
+            # While building the full dict in memory then saving to cache should be quicker
+            # (for prefix lookup), this defeats the primary value of the cache in avoid holding
+            # huge objects in memory. An intermediate write when the dict is getting big
+            # will be needed for scale.
+            if sep:
+                self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
+                                                 autocommit=False, journal_mode ='OFF')
+                for key, value in prefix_lookup.items():
+                    self._prefix_lookup[key] = value
+                self._prefix_lookup.commit()
+            else:
+                self._offset_lookup = SqliteDict(self.filename + '.offset.db', encode=int, decode=int,
+                                                 autocommit=False, journal_mode ='OFF')
+                for key, value in offset_lookup.items():
+                    self._offset_lookup[key] = value
+                self._offset_lookup.commit()
+        else:
+            if sep:
+                self._prefix_lookup = prefix_lookup
+            else:
+                self._offset_lookup = offset_lookup
 
     def sort(self, destination, sort = "names", safe = True, chunk_size = 2000):
         """
