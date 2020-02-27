@@ -141,10 +141,13 @@ class Vector_file(object):
                 # Leave _build_offset_lookup to build the reference
                 os.remove(self.filename + '.db')
             else:
-                self._offset_lookup = SqliteDict(self.filename + '.db',
-                                                 flag=('c' if self.mode=='a' else 'r'),
-                                                 encode=int, decode=int)
-    
+                if os.path.exists(self.filename + '.offset.db'):
+                    self._offset_lookup = SqliteDict(self.filename + '.offset.db',
+                                                     flag=('c' if self.mode=='a' else 'r'),
+                                                     encode=int, decode=int)
+                if os.path.exists(self.filename + '.prefix.db'):
+                    self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
+                                                     flag=('c' if self.mode=='a' else 'r'))
         if self.mode == "r":
             self._open_for_reading()
         elif self.mode == "w":
@@ -414,16 +417,16 @@ class Vector_file(object):
     def _build_offset_lookup(self, force=False, sep = None):
         if hasattr(self, "_offset_lookup") and not force:
             return
-
-        if sep is not None:
-            self._prefix_lookup = defaultdict(list)
-        else:
-            self._offset_lookup = {}
         
-        if self.offset_cache:
+        if self.offset_cache and (sep is None):
             # Force new database ('n')
-            self._offset_lookup = SqliteDict(self.filename + '.db', encode=int, decode=int,
+            self._offset_lookup = SqliteDict(self.filename + '.offset.db', encode=int, decode=int,
                                              autocommit=False, journal_mode ='OFF')
+        if self.offset_cache and (sep is not None):
+            self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
+                                             autocommit=False, journal_mode ='OFF')
+        elif sep is not None:
+            self._prefix_lookup = defaultdict(list)
         else:
             self._offset_lookup = {}
             
@@ -438,14 +441,19 @@ class Vector_file(object):
                     "(words) The last vector representation of each " + 
                     "identifier will be used, and earlier ones ignored.")
             if sep:
-                self._prefix_lookup[label.split(sep, 1)[0]].append((label, self.file.tell()))
+                try:
+                    self._prefix_lookup[label.split(sep, 1)[0]].append((label, self.file.tell()))
+                except KeyError:
+                    self._prefix_lookup[label.split(sep, 1)[0]] = [(label, self.file.tell())]
             else:
                 self._offset_lookup[label] = self.file.tell()                
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
             
-        if self.offset_cache:
+        if self.offset_cache and sep:
+            self._prefix_lookup.commit()
+        elif self.offset_cache:
             self._offset_lookup.commit()
 
     def sort(self, destination, sort = "names", safe = True, chunk_size = 2000):
