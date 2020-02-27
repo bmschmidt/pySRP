@@ -443,10 +443,12 @@ class Vector_file(object):
                     "(words) The last vector representation of each " + 
                     "identifier will be used, and earlier ones ignored.")
             if sep:
+                key = label.split(sep, 1)[0]
+                loc = self.file.tell()
                 try:
-                    self._prefix_lookup[label.split(sep, 1)[0]].append((label, self.file.tell()))
+                    self._prefix_lookup[key] += [(label, loc)]
                 except KeyError:
-                    self._prefix_lookup[label.split(sep, 1)[0]] = [(label, self.file.tell())]
+                    self._prefix_lookup[key] = [(label, loc)]
             else:
                 self._offset_lookup[label] = self.file.tell()                
             # Skip to the next name without reading.
