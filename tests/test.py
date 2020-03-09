@@ -33,7 +33,7 @@ class ReadAndWrite(unittest.TestCase):
             with SRP.Vector_file(Path(dir, "test.bin")) as fin:
                 fin.sort(Path(dir, "test2.bin"))
             with SRP.Vector_file(Path(dir, "test2.bin")) as f2:
-                rows = [k for (k, v) in f2]
+                rows = [k for (k, v) in f2 if k != 'last_offset']
             self.assertEqual(rows, [t[0] for t in self.test_set[:3]])
         
     def test_entrance_format(self):
