@@ -25,5 +25,5 @@ setup(name='SRP',
         "Topic :: Text Processing :: Indexing",
         "Topic :: Text Processing :: Linguistic"
         ],
-      install_requires= ["numpy", "regex"]
+      install_requires= ["numpy", "regex","sqlitedict"]
 )

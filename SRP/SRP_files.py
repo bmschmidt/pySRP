@@ -430,7 +430,7 @@ class Vector_file(object):
         i = 0
         while i < self.vocab_size:
             label = self._read_row_name()
-            if sep is None and label in self._offset_lookup:
+            if sep is None and label in offset_lookup:
                 warnings.warn(
                     "Warning: this vector file has duplicate identifiers " + 
                     "(words) The last vector representation of each " + 
