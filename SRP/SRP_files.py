@@ -126,6 +126,7 @@ class Vector_file(object):
             this is False, which means the offset table is built on load and kept in memory.
         """
         
+        self.unsaved_updates = False
         self.filename = filename
         self.dims = dims
         self.mode = mode
@@ -324,6 +325,7 @@ class Vector_file(object):
         self.file.write(array.tobytes())
         self.file.write(b"\n")
         self.nrows += 1
+        self.unsaved_updates = True
 
     def close(self):
         """
@@ -336,7 +338,10 @@ class Vector_file(object):
 
         self.file.close()
         if self.offset_cache:
-            self._offset_lookup.close()
+            if hasattr(self, '_offset_lookup'):
+                self._offset_lookup.close()
+            if hasattr(self, '_prefix_lookup'):
+                self._prefix_lookup.close()
 
     def _preload_metadata(self):
         """
@@ -392,13 +397,17 @@ class Vector_file(object):
 
 
         
-    def _read_row_name(self):
+    def _read_row_name(self, suppress_output=False):
         buffer = []
         while True:
             ch = self.file.read(1)
+            if ch == b'':
+                # No more data
+                return
             if not ch and self.remaining_words > 0:
-                print("Ran out of data with {} words left".format(
-                    self.remaining_words))
+                if not suppress_output:
+                    print("Ran out of data with {} words left".format(
+                        self.remaining_words))
                 return
             if ch == b' ':
                 break
@@ -414,59 +423,87 @@ class Vector_file(object):
         return word
 
     
-    def _build_offset_lookup(self, force=False, sep = None):
-        if hasattr(self, "_offset_lookup") and not force and not sep:
-            return
-        if hasattr(self, "_prefix_lookup") and not force and sep:
-            return
+    def _build_offset_lookup(self, force=False, sep = None, update=False):
+        '''
+        Build the lookup for the vector file offsets. update lets 
+        you update an existing lookup dictionary.
+        '''
+        if not (force or update):
+            if hasattr(self, "_offset_lookup") and not sep:
+                return
+            if hasattr(self, "_prefix_lookup") and sep:
+                return
         
         if sep is not None:
             prefix_lookup = defaultdict(list)
         else:
             offset_lookup = {}
-            
+        
+        i = 0
         self._preload_metadata()
         # Add warning for duplicate ids.
-        i = 0
+        if update:
+            if sep:
+                last_offset = self._prefix_lookup['last_offset'][0]
+            else:
+                last_offset = self._offset_lookup['last_offset']
+            self.file.seek(last_offset + self.precision * self.vector_size)
+
         while i < self.vocab_size:
-            label = self._read_row_name()
+            label = self._read_row_name(suppress_output=update)
+            if not label:
+                break
             if sep is None and label in offset_lookup:
                 warnings.warn(
                     "Warning: this vector file has duplicate identifiers " + 
                     "(words) The last vector representation of each " + 
                     "identifier will be used, and earlier ones ignored.")
+
+            loc = self.file.tell()
             if sep:
                 key = label.split(sep, 1)[0]
-                loc = self.file.tell()
                 prefix_lookup[key].append((label, loc))
             else:
-                offset_lookup[label] = self.file.tell()
+                offset_lookup[label] = loc
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
-            
-        if self.offset_cache:
-            # While building the full dict in memory then saving to cache should be quicker
-            # (for prefix lookup), this defeats the primary value of the cache in avoid holding
-            # huge objects in memory. An intermediate write when the dict is getting big
-            # will be needed for scale.
-            if sep:
+        
+        if sep:
+            prefix_lookup['last_offset'] = [loc]
+            if update:
+                for key, value in prefix_lookup.items():
+                    self._prefix_lookup[key] += value
+                if self.offset_cache:
+                    self._prefix_lookup.commit()
+            elif self.offset_cache:
                 self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
                                                  autocommit=False, journal_mode ='OFF')
                 for key, value in prefix_lookup.items():
                     self._prefix_lookup[key] = value
                 self._prefix_lookup.commit()
             else:
-                self._offset_lookup = SqliteDict(self.filename + '.offset.db', encode=int, decode=int,
+                self._prefix_lookup = prefix_lookup
+            self._prefix_lookup['last_offset'] = [self._prefix_lookup['last_offset'][-1]]
+
+        elif not sep:
+            offset_lookup['last_offset'] = loc
+            if update:
+                for key, value in offset_lookup.items():
+                    self._offset_lookup[key] = value
+                if self.offset_cache:
+                    self._offset_lookup.commit()
+            elif self.offset_cache:
+                self._offset_lookup = SqliteDict(self.filename + '.offset.db',
+                                                 encode=int, decode=int,
                                                  autocommit=False, journal_mode ='OFF')
                 for key, value in offset_lookup.items():
                     self._offset_lookup[key] = value
                 self._offset_lookup.commit()
-        else:
-            if sep:
-                self._prefix_lookup = prefix_lookup
             else:
                 self._offset_lookup = offset_lookup
+        self.unsaved_updates = False
+                
 
     def sort(self, destination, sort = "names", safe = True, chunk_size = 2000):
         """
@@ -605,7 +642,7 @@ class Vector_file(object):
         to prefix.
 
         Once used with a prefix, you **cannot** change the prefix on the file.
-        """        
+        """
 
         if self.mode=='a' or self.mode == 'w':
             self.file.flush()
@@ -616,7 +653,7 @@ class Vector_file(object):
         except AttributeError:
             self._prefix_sep = sep
 
-        self._build_offset_lookup(sep = sep)
+        self._build_offset_lookup(sep = sep, update=self.unsaved_updates)
         
         # Will fail on any missing labels
 
@@ -636,7 +673,7 @@ class Vector_file(object):
         
         return output
         
-    def _read_binary_row(self):
+    def _read_binary_row(self, suppress_output=False):
         binary_len = self.precision * self.vector_size
         self.pos = self.file.tell()
         if self.slice_and_dice:
@@ -650,12 +687,14 @@ class Vector_file(object):
                 weights = np.frombuffer(
                     self.file.read(binary_len), dtype=self.float_format)
             except ValueError:
-                print("Can't parse data with {} words left".format(
-                    self.remaining_words))
+                if not suppress_output:
+                    print("Can't parse data with {} words left".format(
+                        self.remaining_words))
                 raise StopIteration
             if len(weights) != self.vector_size:
-                print("Ran out of data with {} words left".format(
-                    self.remaining_words))
+                if not suppress_output:
+                    print("Ran out of data with {} words left".format(
+                        self.remaining_words))
                 raise StopIteration
         if self.mode=='r' and self.precision == 2:
             weights = weights.astype("<f4")
@@ -666,8 +705,7 @@ class Vector_file(object):
         Again, I'm starting with a version of the gensim code.
         https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py
         """
-
-        # Always preload the metadata so you can iterate multiple times.
+        
         self._preload_metadata()
 
         while True:
