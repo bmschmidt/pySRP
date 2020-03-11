@@ -338,7 +338,10 @@ class Vector_file(object):
 
         self.file.close()
         if self.offset_cache:
-            self._offset_lookup.close()
+            if hasattr(self, '_offset_lookup'):
+                self._offset_lookup.close()
+            if hasattr(self, '_prefix_lookup'):
+                self._prefix_lookup.close()
 
     def _preload_metadata(self):
         """
@@ -398,6 +401,9 @@ class Vector_file(object):
         buffer = []
         while True:
             ch = self.file.read(1)
+            if ch == b'':
+                # No more data
+                return
             if not ch and self.remaining_words > 0:
                 if not suppress_output:
                     print("Ran out of data with {} words left".format(
