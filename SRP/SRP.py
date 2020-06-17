@@ -210,7 +210,7 @@ class SRP(object):
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
 
-        values = np.dot(counts,scores)
+        values = np.average(scores, weights=counts, axis=0)
 
         return values
             
