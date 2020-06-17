@@ -137,10 +137,14 @@ class Vector_file(object):
         self.precision = precision
         self.float_format = '<f{}'.format(precision)
         self.offset_cache = offset_cache
-        if self.offset_cache and os.path.exists(self.filename + '.db'):
+        if self.offset_cache:
             if (self.mode == 'w'):
                 # Leave _build_offset_lookup to build the reference
-                os.remove(self.filename + '.db')
+                for f in [self.filename + '.offset.db', self.filename + '.prefix.db']:
+                    try:
+                        os.remove(self.filename + '.prefix.db')
+                    except FileNotFoundError:
+                        pass
             else:
                 if os.path.exists(self.filename + '.offset.db'):
                     self._offset_lookup = SqliteDict(self.filename + '.offset.db',
@@ -312,7 +316,7 @@ class Vector_file(object):
                 raise TypeError("Numpy array must be of type '<f4'")
         if len(array) != self.dims:
             raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(
-                self.vector_size, self.dims))
+                self.dims, len(array)))
         self.file.write(identifier.encode("utf-8") + b" ")
         try:
             self._prefix_lookup[identifier.split(self.sep, 1)[0]].append((identifier, self.file.tell()))
@@ -440,6 +444,7 @@ class Vector_file(object):
             offset_lookup = {}
         
         i = 0
+        loc = 0
         self._preload_metadata()
         # Add warning for duplicate ids.
         if update:
