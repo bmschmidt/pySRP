@@ -426,87 +426,148 @@ class Vector_file(object):
             raise
         return word
 
-    
-    def _build_offset_lookup(self, force=False, sep = None, update=False):
+    def _build_prefix_lookup(self, force=False, sep = None, update=False, dump_every=1000000):
         '''
-        Build the lookup for the vector file offsets. update lets 
-        you update an existing lookup dictionary.
+        Build a cache of references to vectors using a prefix. 
+            
+            e.g. 'abc-01, abc-02 => abc: {'01':loc, '02':loc}'
+            
+        If the class has offset_cache set to true at initialization, this will be saved
+        to an SQLite database using the sqlitedict library. This is slower than just
+        keeping a dictionary in memory, but necessary for big data workflows. As it builds
+        the cache, the reference is written to the dictionary every *n* unique prefixes, where
+        n is set by the `dump_every` argument. This is motivated by the fact that frequent commits
+        really slow down the process, *but* that if you're writing a cache to disk, you probably have
+        a case where you can't first build everything to memory.
         '''
-        if not (force or update):
-            if hasattr(self, "_offset_lookup") and not sep:
-                return
-            if hasattr(self, "_prefix_lookup") and sep:
-                return
+        if sep is None:
+            print('separator needed for prefix lookup. Switching to building offset lookup')
+            self._build_offset_lookup(force, sep, update)
+            return
         
-        if sep is not None:
-            prefix_lookup = defaultdict(list)
-        else:
-            offset_lookup = {}
+        if not (force or update) and hasattr(self, "_prefix_lookup"):
+            return
         
-        i = 0
-        loc = 0
+        prefix_lookup = defaultdict(list)
+        if self.offset_cache:
+            self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
+                                             autocommit=False, journal_mode ='OFF')
+        
+        i, n_prefixes, loc = 0, 0, 0
+        key = None
         self._preload_metadata()
-        # Add warning for duplicate ids.
-        if update:
-            if sep:
-                last_offset = self._prefix_lookup['last_offset'][0]
-            else:
-                last_offset = self._offset_lookup['last_offset']
-            self.file.seek(last_offset + self.precision * self.vector_size)
-
-        while i < self.vocab_size:
-            label = self._read_row_name(suppress_output=update)
-            if not label:
-                break
-            if sep is None and label in offset_lookup:
-                warnings.warn(
-                    "Warning: this vector file has duplicate identifiers " + 
-                    "(words) The last vector representation of each " + 
-                    "identifier will be used, and earlier ones ignored.")
-
-            loc = self.file.tell()
-            if sep:
-                key = label.split(sep, 1)[0]
-                prefix_lookup[key].append((label, loc))
-            else:
-                offset_lookup[label] = loc
-            # Skip to the next name without reading.
-            self.file.seek(self.precision*self.vector_size, 1)
-            i += 1
         
-        if sep:
-            prefix_lookup['last_offset'] = [loc]
+        if update:
+            last_offset = self._prefix_lookup['last_offset'][0]
+            self.file.seek(last_offset + self.precision * self.vector_size)
+        
+        def dump_from_memory(prefix_lookup):
             if update:
                 for key, value in prefix_lookup.items():
                     self._prefix_lookup[key] += value
                 if self.offset_cache:
                     self._prefix_lookup.commit()
             elif self.offset_cache:
-                self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
-                                                 autocommit=False, journal_mode ='OFF')
-                for key, value in prefix_lookup.items():
+                for i, (key, value) in enumerate(prefix_lookup.items()):
                     self._prefix_lookup[key] = value
                 self._prefix_lookup.commit()
-            else:
-                self._prefix_lookup = prefix_lookup
-            self._prefix_lookup['last_offset'] = [self._prefix_lookup['last_offset'][-1]]
+            prefix_lookup = defaultdict(list)
+        
+        collector = []
+        while i < self.vocab_size:
+            label = self._read_row_name(suppress_output=update)
+            if not label:
+                break
+            
+            loc = self.file.tell()
+            newkey = label.split(sep, 1)[0]
+            
+            # To avoid duplicates, only allow labels from the same prefix on consecutive vectors
+            # If you come across the same set later, the first part will be overwritten.
+            # Note that this doesn't deduplicate the vectors, just loses the reference to them.
+            if newkey != key:
+                n_prefixes += 1
+                prefix_lookup[key] = collector
+                
+                if (n_prefixes % int(dump_every/4) == 0):
+                    print("Progress: n_prefixes", n_prefixes)
+                if (n_prefixes % dump_every == 0) and (update or self.offset_cache):
+                    print('saving intermediate')
+                    dump_from_memory(prefix_lookup)
+                    prefix_lookup = defaultdict(list)
+    
+                key = newkey
+                collector = []
+            
+            collector.append((label, loc))
+            # Skip to the next name without reading.
+            self.file.seek(self.precision*self.vector_size, 1)
+            i += 1
+            
+        prefix_lookup['last_offset'] = [loc]
+        
+        if update or self.offset_cache:
+            dump_from_memory(prefix_lookup)
+        else:
+            self._prefix_lookup = prefix_lookup
 
-        elif not sep:
-            offset_lookup['last_offset'] = loc
-            if update:
-                for key, value in offset_lookup.items():
-                    self._offset_lookup[key] = value
-                if self.offset_cache:
-                    self._offset_lookup.commit()
-            elif self.offset_cache:
-                self._offset_lookup = SqliteDict(self.filename + '.offset.db',
-                                                 encode=int, decode=int,
-                                                 autocommit=False, journal_mode ='OFF')
-                for key, value in offset_lookup.items():
-                    self._offset_lookup[key] = value
+        self._prefix_lookup['last_offset'] = [self._prefix_lookup['last_offset'][-1]]
+        self.unsaved_updates = False
+    
+    def _build_offset_lookup(self, force=False, sep = None, update=False):
+        '''
+        Build the lookup for the vector file offsets. update lets 
+        you update an existing lookup dictionary.
+        '''
+        if sep is not None:
+            print('separator provided, switching to building prefix lookup')
+            self._build_prefix_lookup(force, sep, update)
+        
+        if not (force or update) and hasattr(self, "_offset_lookup"):
+            return
+        
+        offset_lookup = {}
+        if self.offset_cache:
+            self._offset_lookup = SqliteDict(self.filename + '.offset.db',
+                                             encode=int, decode=int,
+                                             autocommit=False, journal_mode ='OFF')
+            return
+        
+        i = 0
+        loc = 0
+        self._preload_metadata()
+        
+        if update:
+            last_offset = self._offset_lookup['last_offset']
+            self.file.seek(last_offset + self.precision * self.vector_size)
+
+        # Add warning for duplicate ids.
+        while i < self.vocab_size:
+            label = self._read_row_name(suppress_output=update)
+            if not label:
+                break
+            if label in offset_lookup:
+                warnings.warn(
+                    "Warning: this vector file has duplicate identifiers " + 
+                    "(words) The last vector representation of each " + 
+                    "identifier will be used, and earlier ones ignored.")
+            loc = self.file.tell()
+            offset_lookup[label] = loc
+            self.file.seek(self.precision*self.vector_size, 1)
+            i += 1
+
+        offset_lookup['last_offset'] = loc
+        if update:
+            for key, value in offset_lookup.items():
+                self._offset_lookup[key] = value
+            if self.offset_cache:
                 self._offset_lookup.commit()
-            else:
-                self._offset_lookup = offset_lookup
+        elif self.offset_cache:
+            for key, value in offset_lookup.items():
+                self._offset_lookup[key] = value
+            self._offset_lookup.commit()
+        else:
+            self._offset_lookup = offset_lookup
         self.unsaved_updates = False
                 
 
