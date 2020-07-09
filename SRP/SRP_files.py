@@ -704,7 +704,7 @@ class Vector_file(object):
 
     def find_prefix(self, prefix, sep = "-"):
         """
-        Uses as an on-disk loca okup to return all rows where the text before 'sep' is equal
+        Uses an on-disk or in-memory lookup to return all rows where the text before 'sep' is equal
         to prefix.
 
         Once used with a prefix, you **cannot** change the prefix on the file.
@@ -719,7 +719,7 @@ class Vector_file(object):
         except AttributeError:
             self._prefix_sep = sep
 
-        self._build_offset_lookup(sep = sep, update=self.unsaved_updates)
+        self._build_prefix_lookup(sep = sep, update=self.unsaved_updates)
         
         # Will fail on any missing labels
 
