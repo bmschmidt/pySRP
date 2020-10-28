@@ -68,12 +68,15 @@ class ReadAndWrite(unittest.TestCase):
             newview = SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2)
             for k, v in newview.find_prefix("file_1", "-"):
                 self.assertEqual(np.float32(1), v[0])
+            newview.close()
+                
+            """
             newview.add_row('file_100-part_302', np.array([100, 302], '<f4'))
             newview.flush()
             fname, row = newview.find_prefix("file_100")[0]
             self.assertEqual(fname, 'file_100-part_302')
             newview.close()
-            
+            """
 
     def test_null_vectors(self):
         """
