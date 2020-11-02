@@ -8,13 +8,6 @@ import sys
 import base64
 from collections import Counter
 
-
-if sys.version_info[0]==3:
-    py2,py3 = False,True
-    py3 = True
-else:
-    (py2,py3) = True,False
-
 tokenregex = regex.compile(u"\w+")
 
 class SRP(object):
@@ -45,10 +38,8 @@ class SRP(object):
         self.cache=cache
         self.cache_limit = cache_limit
         self.dtype = np.float32
-        self._recurse_dict = {}
-        self._scaled_recurse_dict = {}
         self.log = log
-        
+
         if cache:
             # This is the actual hash.
             self._hash_dict = dict()
@@ -57,15 +48,13 @@ class SRP(object):
         return len(self._hash_dict)
 
     def _expand_hexstring(self, hexstring):
-        
-        if py3 and isinstance(hexstring,str):
-            h = bytes.fromhex(hexstring)
-        elif py2:
-            h = hexstring.decode('hex')
+
+        h = bytes.fromhex(hexstring)
+
         ints = np.frombuffer(h, np.uint8)
         value = np.unpackbits(ints).astype(np.int8)
         return (value*2-1)[:self.dim]
-        
+
     def string_to_binary(self, string):
         expand = np.ceil(self.dim / 160).astype('i8')
         full_hash = ""
@@ -79,7 +68,7 @@ class SRP(object):
         return self._expand_hexstring(full_hash)
 
     def hash_string(self, string, cache=None):
-    
+
         """
         Gives a hash for a word.
         string:      The string to be hashed.
@@ -102,28 +91,19 @@ class SRP(object):
             cache = False
 
         value = self.string_to_binary(string)
-            
+
         if cache and self._cache_size() >= self.cache_limit:
             # Clear the cache; maybe things have changed.
             self._hash_dict = {}
-        
+
         if cache and self._cache_size() < self.cache_limit:
             self._hash_dict[string] = value
-        
+
         return value
 
     def tokenize(self,string,regex=tokenregex):
-        if py3 and isinstance(string,bytes):
+        if isinstance(string,bytes):
             string = string.decode("utf-8")
-        if py2 and not isinstance(string,unicode):
-            try:
-                string = unicode(string)
-            except UnicodeDecodeError:
-                try:
-                    string = string.decode("utf-8")
-                except UnicodeDecodeError:
-                    sys.stderr.write("Encountered non-unicode string" + "\n")
-                    string = string.decode("utf-8","ignore")
         count = dict()
         parts = regex.findall(string)
         for part in parts:
@@ -136,7 +116,7 @@ class SRP(object):
 
     def standardize(self, words, counts, unzip = True):
         full = dict()
-        
+
         for i in range(len(words)):
             """
             Here we retokenize each token. A full text can be tokenized
@@ -165,17 +145,10 @@ class SRP(object):
         # be more sensical. This is to force the use of BLAS
         # for matrix multiplication, which seems to be faster.
 
-        try:        
-            if isinstance(words,basestring):
-                words = [words]
-                counts = np.array([1],np.float32)
+        if isinstance(words, str) or isinstance(words, bytes):
+            words = [words]
+            counts = np.array([1], np.float32)
 
-        except NameError:
-            # That is, we're in py3
-            if isinstance(words,str) or isinstance(words,bytes):
-                words = [words]
-                counts = np.array([1],np.float32)
-        
         return (words,counts)
 
     def _log_transform(self,counts,thresh = 1e05):
@@ -206,63 +179,19 @@ class SRP(object):
             counts = self._log_transform(counts)
 
         scores = np.zeros((len(words), self.dim), dtype = np.float32)
-        
+
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
 
 #        values = np.dot(counts,scores)
-        values = np.average(scores, weights=counts, axis=0) * sum(counts)
-
+        try:
+            values = np.average(scores, weights=counts, axis=0) * sum(counts)
+        except ZeroDivisionError:
+            if sum(counts) == 0:
+                values = np.zeros_like(scores)
         return values
-            
-    def hash_all_substrings(self, string,depth=0):
-        """
-        Breaks a string down into all possible substrings, and then
-        returns the projection of the string in the space
-        defined by them.
-
-        Possibly useful as a vector-space approximation of string distance.
-        """
-        counter = Counter()
-        if string in self._recurse_dict:
-            return self._recurse_dict[string]
-        elif len(self._recurse_dict) > self.cache_limit * 2:
-            self._recurse_dict = {}
-        # The subhash is the hash of this string,
-        # plus the hash of its two longest substrings,
-        # minus their overlap (which is counted twice).
-        # So hash(foobar) =
-        # SRP(foobar) + hash(oobar) +
-        # hash(fooba) - hash(ooba).
-
-        # This recursive formulation should work fine
-        # with caching.
 
 
-        # Start with the current string.
-        output = self.hash_string(string, cache=False)
-
-        # The cases where recursion ends.
-        if len(string) == 1:
-            self._recurse_dict[string] = output
-            return output
-        if len(string) == 2:
-            self._recurse_dict[string] = output            
-            return output + self.hash_all_substrings(string[0],depth+1) + \
-                self.hash_all_substrings(string[1],depth+1)
-
-        # Recurse down the parts.
-        start = string[:-1]
-        end = string[1:]
-        middle = string[1:-1]
-
-        output = output + self.hash_all_substrings(start,depth+1) +\
-                 self.hash_all_substrings(end,depth+1) -\
-                 self.hash_all_substrings(middle,depth+1)
-        
-        self._recurse_dict[string] = output
-        return output        
-    
     def to_base64(self,vector):
         """
         Converts a vector to a base64, little-endian, 4-byte representation
@@ -270,7 +199,7 @@ class SRP(object):
         """
         string = np.array(vector,'<f4')
         return base64.b64encode(string)
-    
+
 if __name__=="__main__":
     model = SRP(320)
     print(model.stable_transform("hello world")[:6])
