@@ -15,12 +15,12 @@ class ReadAndWrite(unittest.TestCase):
                 ("foo2", array1),
                 ("fü", array2),
                 ("stop", array2)]
-    
-    
+
+
     def make_testfile(self, path, array = None):
         if array is None:
             array = self.test_set
-            
+
         with SRP.Vector_file(path, dims=3, mode="w") as testfile:
             for row in self.test_set:
                 if row[0] == "stop":
@@ -35,11 +35,11 @@ class ReadAndWrite(unittest.TestCase):
             with SRP.Vector_file(Path(dir, "test2.bin")) as f2:
                 rows = [k for (k, v) in f2]
             self.assertEqual(rows, [t[0] for t in self.test_set[:3]])
-        
+
     def test_entrance_format(self):
         with tempfile.TemporaryDirectory() as dir:
             self.make_testfile(Path(dir, "test.bin"))
-                
+
             with SRP.Vector_file(Path(dir, "test.bin"), dims=3, mode="a") as testfile2:
                 testfile2.add_row(*self.test_set[3])
 
@@ -57,7 +57,7 @@ class ReadAndWrite(unittest.TestCase):
                     assert "duplicate identifiers" in str(w[-1].message)
 
             self.assertTrue(testfile2.nrows == 4)
-        
+
     def test_prefix_lookup(self):
         with tempfile.TemporaryDirectory() as dir:
             with SRP.Vector_file(Path(dir, "out.bin"), mode = "a", dims = 2) as fout:
@@ -69,7 +69,7 @@ class ReadAndWrite(unittest.TestCase):
             for k, v in newview.find_prefix("file_1", "-"):
                 self.assertEqual(np.float32(1), v[0])
             newview.close()
-                
+
             """
             newview.add_row('file_100-part_302', np.array([100, 302], '<f4'))
             newview.flush()
@@ -90,7 +90,7 @@ class ReadAndWrite(unittest.TestCase):
             with p.open() as fin:
                 self.assertEqual(fin.read(), '000000001 00000\ngood \n')
             fout.close()
-            
+
     def test_creation_and_reading(self):
         with tempfile.TemporaryDirectory() as dir:
             testloc = Path(dir, "test.bin")
@@ -134,25 +134,25 @@ class ReadAndWrite(unittest.TestCase):
             with self.assertRaises(TypeError):
                 testfile.add_row("this is a space", self.array1)
             testfile.close()
-        
+
 class BasicHashing(unittest.TestCase):
     def test_ascii(self):
         hasher = SRP.SRP(6)
-        hello_world = hasher.stable_transform("hello world", log=False)
+        hello_world = hasher.stable_transform("hello world", log=False, unit_length = False)
 
         self.assertEqual(
             hello_world.tolist(),
             np.array([0.,  0.,  2.,  0.,  2.,  0.]).tolist()
             )
-        
+
     def test_dtype(self):
         hasher = SRP.SRP(6)
         hello_world = hasher.stable_transform("hello world", log=False)
         self.assertEqual(
             hello_world.dtype,
             np.float32)
-        
-        
+
+
     def test_wordcounts_unicode(self):
         hasher = SRP.SRP(160)
 
@@ -166,15 +166,15 @@ class BasicHashing(unittest.TestCase):
             words =  u"Güten Tag",
             log=False
         ).tolist()
-    
+
         self.assertEqual(wordcount_style,string_style)
-        
+
     def test_ascii_equals_unicode(self):
         hasher = SRP.SRP(160)
-        
+
         hello_world = hasher.stable_transform("hello world", log=False).tolist()
         hello_world_unicode = hasher.stable_transform(u"hello world", log=False).tolist()
-        
+
         self.assertEqual(hello_world,hello_world_unicode)
 
     def test_logs_are_plausible(self):
@@ -184,27 +184,29 @@ class BasicHashing(unittest.TestCase):
         log_srp = hasher.stable_transform("hello", log=True)
         nonlog_srp = hasher.stable_transform("hello", log=False)
         difference = sum(log_srp - (nonlog_srp) * log_unit)
-        
+
         # Forgive floating point error.
         self.assertTrue(difference < 1e-05)
-        
+
     def test_unicode(self):
         """
         One of the goals is be able to pass *either* encoded or decoded
         utf-8, because that tends to happen.
+
+        These tests are a lot easier to pass now that python2 is deprecated.
 
         """
         hasher = SRP.SRP(6)
         guten = u"Güten Tag"
         gutenhash = np.array([0., 2., -2., 0., 2.,0.]).tolist()
 
-        basic = hasher.stable_transform(guten, log=False).tolist()
+        basic = hasher.stable_transform(guten, log=False, unit_length = False).tolist()
         self.assertTrue(basic == gutenhash)
 
-        encoded = hasher.stable_transform(guten.encode("utf-8"), log=False).tolist()
+        encoded = hasher.stable_transform(guten.encode("utf-8"), log=False, unit_length = False).tolist()
         self.assertTrue(encoded == gutenhash)
 
-        decoded = hasher.stable_transform(guten.encode("utf-8").decode("utf-8"),log=False).tolist()
+        decoded = hasher.stable_transform(guten.encode("utf-8").decode("utf-8"),log=False, unit_length = False).tolist()
         self.assertTrue(decoded == gutenhash)
 
     def test_standardization(self):
@@ -224,7 +226,7 @@ class BasicHashing(unittest.TestCase):
         string1 = "I was born in 2001"
         string2 = "I was born in 1901"
         h1 = hasher.stable_transform(string1, log=False, standardize=True)
-        h2 = hasher.stable_transform(string1, log=False, standardize=True)        
+        h2 = hasher.stable_transform(string1, log=False, standardize=True)
         self.assertEqual(h1.tolist(), h2.tolist())
 
 

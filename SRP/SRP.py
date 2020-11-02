@@ -10,6 +10,9 @@ from collections import Counter
 
 tokenregex = regex.compile(u"\w+")
 
+class EmptyTextError(ZeroDivisionError):
+    pass
+
 class SRP(object):
     """
     A factory to perform random transformations.
@@ -101,13 +104,17 @@ class SRP(object):
 
         return value
 
-    def tokenize(self,string,regex=tokenregex):
-        if isinstance(string,bytes):
+    def tokenlist(self, string, regex = tokenregex, lower = True):
+        if isinstance(string, bytes):
             string = string.decode("utf-8")
+        return regex.findall(string)
+
+    def tokenize(self, string, regex=tokenregex, lower = True):
+        parts = self.tokenlist(string, regex, lower)
         count = dict()
-        parts = regex.findall(string)
         for part in parts:
-            part = part.lower()
+            if lower:
+                part = part.lower()
             try:
                 count[part] += 1
             except KeyError:
@@ -153,7 +160,10 @@ class SRP(object):
 
     def _log_transform(self,counts,thresh = 1e05):
         # Take a ratio of the full text.
-        counts = counts/np.sum(counts)
+        total = np.sum(counts)
+        if total == 0:
+            raise EmptyTextError("Can't normalize, zero words in text.")
+        counts = counts/total
         counts = np.log(counts*thresh)
         # Anything occurring less than 1 per 100,000 is removed.
         # This lets us avoid negatives, which would screw things up.
@@ -161,7 +171,9 @@ class SRP(object):
         counts.clip(0)
         return counts
 
-    def stable_transform(self, words, counts=None, log=None,standardize=True):
+    def stable_transform(self, words, counts=None, log=None, standardize=True,
+                         unit_length = True
+        ):
         """
 
         counts: the number of occurrences for each word in 'words'. This can be "none",
@@ -177,18 +189,21 @@ class SRP(object):
             (words,counts) = self.standardize(words,counts)
         if log:
             counts = self._log_transform(counts)
-
         scores = np.zeros((len(words), self.dim), dtype = np.float32)
-
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
 
-#        values = np.dot(counts,scores)
         try:
-            values = np.average(scores, weights=counts, axis=0) * sum(counts)
+            values = np.average(scores, weights=counts, axis=0)
+            if unit_length == False:
+                values = values * sum(counts)
         except ZeroDivisionError:
             if sum(counts) == 0:
-                values = np.zeros_like(scores)
+                raise EmptyTextError
+            else:
+                raise
+        if unit_length:
+            values = values/np.linalg.norm(values)
         return values
 
 

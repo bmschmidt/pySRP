@@ -37,7 +37,7 @@ def directory_yielder(inputfile):
             id = filename[:-4]
             txt = "\n".join(open(os.path.join(inputfile, filename)).readlines())
             yield (id, txt)
-            
+
 def textset_to_srp(
         inputfile,
         outputfile,
@@ -73,7 +73,7 @@ def textset_to_srp(
         yielder = directory_yielder
     else:
         raise ValueError("Don't know how to process {}: must be a textfile or a directory".format(inputfile))
-    
+
     for i, (id, txt) in enumerate(yielder(inputfile)):
         transform = hasher.stable_transform(txt, log=True, standardize=True)
         output.add_row(id, transform)
@@ -118,14 +118,14 @@ class Vector_file(object):
         filename: The location on disk.
         dims: The number of vectors to store for each document. Typically ~100 to ~1000.
               Need not be specified if working with an existing file.
-        mode: One of: 'r' (read an existing file); 'w' (create a new file); 'a' (append to the 
+        mode: One of: 'r' (read an existing file); 'w' (create a new file); 'a' (append to the
               end of an existing file)
         max_rows: clip the document to a fixed length. Best left unused.
-        precision: bytes to use for each 
+        precision: bytes to use for each
         offset_cache: Whether to store the byte offset lookup information for vectors. By default,
             this is False, which means the offset table is built on load and kept in memory.
         """
-        
+
         self.filename = filename
         self.dims = dims
         self.mode = mode
@@ -156,13 +156,13 @@ class Vector_file(object):
             self._open_for_appending()
         else:
             raise NameError("Mode must be 'r', 'w', or 'a'.")
-        
+
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-            
+
     def repair_file(self):
         """
         When writing millions of these, sometimes bytes get unaligned: this
@@ -170,7 +170,7 @@ class Vector_file(object):
         """
         if self.mode != "a":
             raise IOError("Can only repair when in append mode")
-        
+
         # This also sets the pointer to the front.
         self._preload_metadata()
         self.nrows = 0
@@ -196,7 +196,7 @@ class Vector_file(object):
         print("Recovered {} rows".format(self.nrows))
         self.file.truncate(previous_start)
         self._rewrite_header()
-        
+
 
     def concatenate_file(self, filename):
         """
@@ -243,13 +243,13 @@ class Vector_file(object):
         self.file.seek(0, 2)
         if self.nrows is None:
             self.nrows = self.vocab_size
-            
+
         if self.dims != self.vector_size:
             raise IndexError(
                 "The existing files is {} dimensions: unable to append"
                 " with {} dimensions as requested".format(
                     self.vector_size, self.dims))
-        
+
     def to_matrix(self, unit_length=False, clean=False):
         """
         Returns the entire file as a matrix with names (wrapped in a dict).
@@ -285,7 +285,7 @@ class Vector_file(object):
             except StopIteration:
                 pass
             except RuntimeError:
-                break            
+                break
         print("Encountered corrupted data with {} words left and unable to recover at all".format(
             self.remaining_words))
         raise StopIteration
@@ -300,10 +300,10 @@ class Vector_file(object):
         except UnicodeDecodeError:
             if " " in identifier.decode("utf-8"):
                 raise TypeError("Spaces are not allowed in row identifiers")
-        
+
         if type(array) != np.ndarray:
             raise TypeError("Must pass a numpy ndarray as array")
-        
+
         if array.dtype != np.dtype(self.float_format):
             if (array.dtype == np.dtype("<f4")) and self.precision == 2:
                 array = array.astype(self.float_format)
@@ -328,7 +328,7 @@ class Vector_file(object):
     def close(self):
         """
         Close the file. It's extremely important to call this method in write modes:
-        not just that the last few files will be missing.        
+        not just that the last few files will be missing.
         If it isn't, the header will have out-of-date information and files won't be read.
         """
         if not "r" in self.mode:
@@ -340,7 +340,7 @@ class Vector_file(object):
 
     def _preload_metadata(self):
         """
-        Portions from https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py    
+        Portions from https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py
         """
 
         counts = None
@@ -352,7 +352,7 @@ class Vector_file(object):
         while last != b"\n":
             header += last
             last = self.file.read(1)
-        
+
         header = header.decode("utf-8")
         self.vocab_size, self.vector_size = map(
             int, header.split())  # throws for invalid file format
@@ -379,19 +379,19 @@ class Vector_file(object):
 #            pass
 
     def _check_if_half_precision(self):
-        
-        body_start = self.file.tell()        
+
+        body_start = self.file.tell()
         word, weights = (self._read_row_name(), self._read_binary_row())
 
         meanval = np.mean(np.abs(weights))
-        
+
         if meanval > 1e10:
             warning = "Average size is extremely large" + \
                "did you mean to specify 'precision = 2'?"
             warnings.warn(warning)
 
 
-        
+
     def _read_row_name(self):
         buffer = []
         while True:
@@ -413,18 +413,18 @@ class Vector_file(object):
             raise
         return word
 
-    
+
     def _build_offset_lookup(self, force=False, sep = None):
         if hasattr(self, "_offset_lookup") and not force and not sep:
             return
         if hasattr(self, "_prefix_lookup") and not force and sep:
             return
-        
+
         if sep is not None:
             prefix_lookup = defaultdict(list)
         else:
             offset_lookup = {}
-            
+
         self._preload_metadata()
         # Add warning for duplicate ids.
         i = 0
@@ -432,8 +432,8 @@ class Vector_file(object):
             label = self._read_row_name()
             if sep is None and label in offset_lookup:
                 warnings.warn(
-                    "Warning: this vector file has duplicate identifiers " + 
-                    "(words) The last vector representation of each " + 
+                    "Warning: this vector file has duplicate identifiers " +
+                    "(words) The last vector representation of each " +
                     "identifier will be used, and earlier ones ignored.")
             if sep:
                 key = label.split(sep, 1)[0]
@@ -444,7 +444,7 @@ class Vector_file(object):
             # Skip to the next name without reading.
             self.file.seek(self.precision*self.vector_size, 1)
             i += 1
-            
+
         if self.offset_cache:
             # While building the full dict in memory then saving to cache should be quicker
             # (for prefix lookup), this defeats the primary value of the cache in avoid holding
@@ -472,20 +472,20 @@ class Vector_file(object):
         """
         This method sorts a vector file by its keys without reading it into memory.
 
-        It also cleans 
+        It also cleans
 
         destination: A new file to be written.
 
-        sort: one of 'names' (default sort by the filenames), 'random' 
+        sort: one of 'names' (default sort by the filenames), 'random'
         (sort randomly), or 'none' (keep the current order)
 
-        safe: whether to check for (and eliminate) duplicate keys and 
+        safe: whether to check for (and eliminate) duplicate keys and
 
         chunk_size: How many vectors to read into memory at a time. Larger numbers
         may improve performance, especially on hard drives,
         by keeping the disk head from moving around.
         """
-        
+
         self._build_offset_lookup()
         ks = list(self._offset_lookup.keys())
         if sort == 'names':
@@ -517,14 +517,14 @@ class Vector_file(object):
                     output.add_row(key, row)
 
     def _regex_search(self, regex):
-        
+
         self._build_offset_lookup()
         values = [(i, k) for k, i in self._offset_lookup.items() if re.search(regex, k)]
         # Sort to ensure values are returned in disk order.
         values.sort()
         for i, k in values:
             yield (k, self[k])
-        
+
 
         self._build_offset_lookup()
         values = [(i, k) for k, i in self._offset_lookup.items() if re.search(regex, k)]
@@ -539,38 +539,38 @@ class Vector_file(object):
         """
         self.file.flush()
         self._rewrite_header()
-        
+
     def __getitem__(self, label):
         """
         Attributes can be accessed in three ways.
-    
+
 
         With a string: this returns just the vector for that string.
         With a list of strings: this returns a multidimensional array for each query passed.
           If any of the requested items do not exist, this will fail.
         With a single *compiled* regular expression (from either the regex or re module). This
           will return an iterator over key, value pairs of keys that match the regex.
-        """        
+        """
 
         self._build_offset_lookup()
 
         if self.mode == 'a' or self.mode == 'w':
             self.file.flush()
-            
+
         if isinstance(label, original_regex_type):
             # Convert from re type since that's
             # more standard
             label = re.compile(label.pattern)
-            
+
         if isinstance(label, regex_type):
             return self._regex_search(label)
-        
+
         if isinstance(label, original_regex_type):
             label = re.compile(label.pattern)
-            
+
         if isinstance(label, regex_type):
             return self._regex_search(label)
-        
+
         if isinstance(label, MutableSequence):
             is_iterable = True
         else:
@@ -582,18 +582,18 @@ class Vector_file(object):
 
         # Prefill and sort so that any block are done in disk-order.
         # This may make a big difference if you're on a tape drive!
-        
+
         vecs = np.zeros((len(label), self.vector_size), '<f4')
         elements = [(self._offset_lookup[l], i) for i, l in enumerate(label)]
         elements.sort()
 
         for offset, i in elements:
-            self.file.seek(offset)            
+            self.file.seek(offset)
             vecs[i] = self._read_binary_row()
 
         # Move pointer to the end in case we're writing.
-        self.file.seek(0, 2)            
-    
+        self.file.seek(0, 2)
+
         if is_iterable:
             return np.stack(vecs)
         else:
@@ -605,11 +605,11 @@ class Vector_file(object):
         to prefix.
 
         Once used with a prefix, you **cannot** change the prefix on the file.
-        """        
+        """
 
         if self.mode=='a' or self.mode == 'w':
             self.file.flush()
-        
+
         try:
             # You're locked in.
             assert(sep == self._prefix_sep)
@@ -617,25 +617,25 @@ class Vector_file(object):
             self._prefix_sep = sep
 
         self._build_offset_lookup(sep = sep)
-        
+
         # Will fail on any missing labels
 
         # Prefill and sort so that any block are done in disk-order.
         # This may make a big difference if you're on a tape drive!
-        
+
         elements = self._prefix_lookup[prefix]
-        
+
         output = []
-        
+
         for full_name, offset in elements:
             self.file.seek(offset)
             output.append((full_name, self._read_binary_row()))
 
         # Move pointer to the end in case we're writing.
         self.file.seek(0, 2)
-        
+
         return output
-        
+
     def _read_binary_row(self):
         binary_len = self.precision * self.vector_size
         self.pos = self.file.tell()
@@ -679,7 +679,7 @@ class Vector_file(object):
 
     def _next_line(self):
         word = self._read_row_name()
-        weights = self._read_binary_row()        
+        weights = self._read_binary_row()
         return (word, weights)
 
 if __name__ == "__main__":
