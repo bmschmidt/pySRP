@@ -250,6 +250,32 @@ class Vector_file(object):
                 " with {} dimensions as requested".format(
                     self.vector_size, self.dims))
 
+    def batch_yielder(self, size = 100, unit_length = False):
+        """
+        Efficiently yield chunks of the representation as a matrix.
+
+        size: the number of rows in the matrix.
+        unit_length: whether to convert each row to unit length before
+                     yielding.
+        """
+        iterator = self.__iter__()
+
+        matrix = np.zeros((size, self.dims), np.float32)
+        labels = [None] * size
+        for i, (id, row) in enumerate(self):
+            j = i % size
+            labels[j] = id
+            if unit_length:
+                row = row/np.linalg.norm(row)
+            matrix[j] = row
+
+            if j == size - 1:
+                yield (labels, matrix)
+                labels = []
+        # final yield
+        if j != size - 1:
+            yield (labels[:j], matrix[:j])
+
     def to_matrix(self, unit_length=False, clean=False):
         """
         Returns the entire file as a matrix with names (wrapped in a dict).
@@ -265,6 +291,7 @@ class Vector_file(object):
                 row = row/np.linalg.norm(row)
             matrix[i] = row
         return {"names": labels, "matrix": matrix}
+
 
 
     def _recover_from_corruption(self):
