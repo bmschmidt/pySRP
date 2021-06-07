@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(name='pysrp',
       packages=["SRP"],
-      version='2.0.0',
+      version='1.1.0',
       description="Run stable random projections.",
       long_description = long_description,
       url="http://github.com/bmschmidt/SRP",
