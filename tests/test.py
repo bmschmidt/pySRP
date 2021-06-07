@@ -198,7 +198,7 @@ class BasicHashing(unittest.TestCase):
         """
         hasher = SRP.SRP(6)
         guten = u"Güten Tag"
-        gutenhash = np.array([0., 2., -2., 0., 2.,0.]).tolist()
+        gutenhash = np.array([0., 2., -2., 0., 2., 0.]).tolist()
 
         basic = hasher.stable_transform(guten, log=False, unit_length = False).tolist()
         self.assertTrue(basic == gutenhash)
@@ -222,9 +222,9 @@ class BasicHashing(unittest.TestCase):
         self.assertEqual(hashed_manually_tokenized.tolist(), hashed_standardized.tolist())
 
     def test_numeric_substitution(self):
-        hasher = SRP.SRP(6)
+        hasher = SRP.SRP(36)
         string1 = "I was born in 2001"
-        string2 = "I was born in 1901"
+        string2 = "I was born in 1907"
         h1 = hasher.stable_transform(string1, log=False, standardize=True)
         h2 = hasher.stable_transform(string1, log=False, standardize=True)
         self.assertEqual(h1.tolist(), h2.tolist())

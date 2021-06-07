@@ -1,0 +1,35 @@
+package:
+  name: pysrp
+  version: "v1.0.0"
+
+source:
+  git_rev: "v1.0.0"
+  git_url: https://github.com/bmschmidt/pySRP
+
+requirements:
+  build:
+    - "python >=3.4, <4"
+    - setuptools
+    - {{ pin_compatible('numpy') }}
+    - regex
+    - sqlitedict
+  host:
+    - numpy
+  run:
+    - python
+    - {{ pin_compatible('numpy') }}
+    - regex
+    - sqlitedict
+
+build:
+  script: python setup.py install
+
+test:
+  imports:
+    - unittest
+    - numpy
+    - regex
+    - sqlitedict
+  
+about:
+  home: https://github.com/bmschmidt/pySRP

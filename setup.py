@@ -1,11 +1,13 @@
-import os
 from setuptools import setup
 
-setup(name='SRP',
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
+setup(name='pysrp',
       packages=["SRP"],
       version='2.0.0',
       description="Run stable random projections.",
-      long_description = open("README.rst").readlines(),
+      long_description = long_description,
       url="http://github.com/bmschmidt/SRP",
       author="Benjamin Schmidt",
       author_email="bmschmidt@gmail.com",
@@ -22,8 +24,9 @@ setup(name='SRP',
         'Programming Language :: Python :: 3.6',          
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',          
+        'Programming Language :: Python :: 3.9',
         "Topic :: Text Processing :: Indexing",
         "Topic :: Text Processing :: Linguistic"
         ],
-      install_requires= ["numpy", "regex","sqlitedict"]
+      install_requires= ["numpy", "regex", "sqlitedict"]
 )

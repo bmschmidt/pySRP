@@ -1,6 +1,6 @@
 # pySRP
 
-Python Module implementing Stable Random Projections.
+Python module implementing Stable Random Projections.
 
 These create interchangeable, data-agnostic vectorized representations of text suitable for a variety of contexts.
 
