@@ -82,7 +82,6 @@ def textset_to_srp(
 
     output.close()
 
-
 class Vector_file(object):
     """
     A class to manage binary files in the word2vec format.
@@ -111,7 +110,7 @@ class Vector_file(object):
        but still slower than an in-memory lookup.
     """
 
-    def __init__(self, filename, dims=float("Inf"), mode="r", max_rows=float("Inf"), precision = 4, offset_cache = False):
+    def __init__(self, filename, dims=float("Inf"), mode="r", max_rows=float("Inf"), precision = "float", offset_cache = False):
         """
         Creates an SRP object.
 
@@ -121,7 +120,7 @@ class Vector_file(object):
         mode: One of: 'r' (read an existing file); 'w' (create a new file); 'a' (append to the
               end of an existing file)
         max_rows: clip the document to a fixed length. Best left unused.
-        precision: bytes to use for each
+        precision: bytes to use for each. 4 (single-precision) is standard; 2 (half precision) is also reasonable. 0 embeds not as floats, but instead into binary hamming space.
         offset_cache: Whether to store the byte offset lookup information for vectors. By default,
             this is False, which means the offset table is built on load and kept in memory.
         """
@@ -130,13 +129,28 @@ class Vector_file(object):
         self.dims = dims
         self.mode = mode
         self.max_rows = max_rows
-        if not precision in [2, 4]:
+        if precision == 2:
+            precision = "half"
+        elif precision == 4:
+            precision = "float"
+        try:
+            assert precision in {"half", "float", "binary"}
+        except:
             e = "Only `4` (single) and `2` (half) bytes are valid options for `precision`"
             raise ValueError(e)
         self.precision = precision
-        self.float_format = '<f{}'.format(precision)
+        if self.precision == "half":
+            self.float_format = '<f2'
+        elif self.precision == "float":
+            self.float_format = '<f4'
+        else:
+            try:
+                assert self.dims % 8 == 0
+            except:
+                raise ValueError("Binary packing must have dimensionality divisible by 8.")
+            self.float_format = '<u1'
         self.offset_cache = offset_cache
-        if self.offset_cache and os.path.exists(self.filename + '.db'):
+        if self.offset_cache and os.path.exists(self.filename + '.offset.db'):
             if (self.mode == 'w'):
                 # Leave _build_offset_lookup to build the reference
                 os.remove(self.filename + '.db')
@@ -148,6 +162,8 @@ class Vector_file(object):
                 if os.path.exists(self.filename + '.prefix.db'):
                     self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
                                                      flag=('c' if self.mode=='a' else 'r'))
+                else:
+                     print("No file", self.filename + '.prefix.db')
         if self.mode == "r":
             self._open_for_reading()
         elif self.mode == "w":
@@ -221,10 +237,19 @@ class Vector_file(object):
         # Move pointer to end. Just in case.
         self.file.seek(0, 2)
 
+    def set_binary_len(self):
+        if self.precision == "binary":
+            self.binary_len = int(self.dims / 8)
+        elif self.precision == "float":
+            self.binary_len = int(4 * self.dims)
+        else:
+            self.binary_len = int(2 * self.dims)
+
     def _open_for_writing(self):
         self.nrows = 0
         self.vector_size = self.dims
         self.file = open(self.filename, 'wb')
+        self.set_binary_len()
         self._rewrite_header()
 
     def _open_for_reading(self):
@@ -250,7 +275,7 @@ class Vector_file(object):
                 " with {} dimensions as requested".format(
                     self.vector_size, self.dims))
 
-    def batch_yielder(self, size = 100, unit_length = False):
+    def batch_yielder(self, size = 100, unit_length = True):
         """
         Efficiently yield chunks of the representation as a matrix.
 
@@ -258,7 +283,6 @@ class Vector_file(object):
         unit_length: whether to convert each row to unit length before
                      yielding.
         """
-        iterator = self.__iter__()
 
         matrix = np.zeros((size, self.dims), np.float32)
         labels = [None] * size
@@ -271,7 +295,7 @@ class Vector_file(object):
 
             if j == size - 1:
                 yield (labels, matrix)
-                labels = []
+                labels = [None] * size
         # final yield
         if j != size - 1:
             yield (labels[:j], matrix[:j])
@@ -332,13 +356,16 @@ class Vector_file(object):
             raise TypeError("Must pass a numpy ndarray as array")
 
         if array.dtype != np.dtype(self.float_format):
-            if (array.dtype == np.dtype("<f4")) and self.precision == 2:
+            if (array.dtype == np.dtype("<f4")) and self.precision == "half":
                 array = array.astype(self.float_format)
+            elif (array.dtype == np.dtype("<f4")) and self.precision == "binary":
+                array = np.packbits(array > 0)
             else:
                 raise TypeError("Numpy array must be of type '<f4'")
         if len(array) != self.dims:
-            raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(
-                self.vector_size, self.dims))
+            if not (len(array) == self.dims / 8 and self.precision == "binary"):
+                raise IndexError("The existing files is {} dimensions: unable to append with {} dimensions as requested".format(
+                    self.vector_size, self.dims))
         self.file.write(identifier.encode("utf-8") + b" ")
         try:
             self._prefix_lookup[identifier.split(self.sep, 1)[0]].append((identifier, self.file.tell()))
@@ -398,12 +425,9 @@ class Vector_file(object):
         else:
             self.slice_and_dice = True
 
-        self.remaining_words = min([self.vocab_size, self.max_rows])
+        self.set_binary_len()
 
-#        try:
-            #self._check_if_half_precision()
-#        except StopIteration:
-#            pass
+        self.remaining_words = min([self.vocab_size, self.max_rows])
 
     def _check_if_half_precision(self):
 
@@ -414,10 +438,8 @@ class Vector_file(object):
 
         if meanval > 1e10:
             warning = "Average size is extremely large" + \
-               "did you mean to specify 'precision = 2'?"
+               "did you mean to specify 'precision = half or precision = binary'?"
             warnings.warn(warning)
-
-
 
     def _read_row_name(self):
         buffer = []
@@ -469,7 +491,7 @@ class Vector_file(object):
             else:
                 offset_lookup[label] = self.file.tell()
             # Skip to the next name without reading.
-            self.file.seek(self.precision*self.vector_size, 1)
+            self.file.seek(self.binary_len, 1)
             i += 1
 
         if self.offset_cache:
@@ -664,14 +686,16 @@ class Vector_file(object):
         return output
 
     def _read_binary_row(self):
-        binary_len = self.precision * self.vector_size
+        binary_len = self.binary_len
         self.pos = self.file.tell()
         if self.slice_and_dice:
             # When dims is less than the resolution of the file size.
-            read_length = self.precision*self.dims
+            assert self.dims % 8 == 0
+            assert self.vector_size % 8 == 0
+            read_length = int(self.dims / self.vector_size * self.binary_len)
             weights = np.frombuffer(self.file.read(read_length), dtype=self.float_format)
-            # Catch up the pointer.
-            _ = self.file.read(self.precision*self.vector_size - read_length)
+            # Catch up the pointer by throwing some data away.
+            self.file.read(self.binary_len - read_length)
         else:
             try:
                 weights = np.frombuffer(
