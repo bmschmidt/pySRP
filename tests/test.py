@@ -16,7 +16,6 @@ class ReadAndWrite(unittest.TestCase):
                 ("fü", array2),
                 ("stop", array2)]
 
-
     def make_testfile(self, path, array = None):
         if array is None:
             array = self.test_set

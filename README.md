@@ -1,25 +1,20 @@
 # pySRP
 
-Python module implementing Stable Random Projections.
+Python module implementing Stable Random Projections, as described in 
+[Cultural Analytics Vol. 1, Issue 2, 2018 October 04, 2018 EDT: Stable Random Projection: Lightweight, General-Purpose Dimensionality Reduction for Digitized Libraries](https://doi.org/10.22148/16.025)
 
-These create interchangeable, data-agnostic vectorized representations of text suitable for a variety of contexts.
+These create interchangeable, data-agnostic vectorized representations of text suitable for a variety of contexts. Unlike most vectorizations, they are suitable for representing texts in any language that uses space-tokenization, or non-linguistic content, since they contain no implicit language model besides words.
 
-You may want to use them in concert with the pre-distributed Hathi SRP features.
+You may want to use them in concert with the pre-distributed Hathi SRP features
+described further here.
 
 ## Installation
 
+Requires python 3
 
-Python 3
 ```bash
-pip3 install git+git://github.com/bmschmidt/pySRP.git
+pip install pysrp
 ```
-
-Python 2
-```bash
-pip install git+git://github.com/bmschmidt/pySRP.git
-```
-
-
 
 ## Usage
 
@@ -69,7 +64,7 @@ This format is the same used by the binary word2vec format.
 ```python
 file = SRP.Vector_file("hathivectors.bin")
 
-for (key,vector) in file:
+for (key, vector) in file:
   pass
   # 'key' is a unique identifier for a document in a corpus
   # 'vector' is a `numpy.array` of type `<f4`.
@@ -118,3 +113,18 @@ for filename in [a,b,c,d]:
 # files must be closed.
 output.close()
 ```
+
+Since files must be closed, it can be easier to use a context manager:
+
+```python
+
+# Note--the dimensions of the file and the hasher should be equal.
+hasher = SRP.SRP(640)
+
+with SRP.Vector_file("new_vectors.bin",dims=640,mode="w") as output:
+  for filename in [a,b,c,d]:
+    hash = hasher.stable_transform(" ".join(open(filename).readlines()))
+    output.add_row(filename,hash)
+```
+
+
