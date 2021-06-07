@@ -38,7 +38,7 @@ class SRP(object):
                  more, it may not be.
         """
         self.dim=dim
-        self.cache=cache
+        self.cache = cache
         self.cache_limit = cache_limit
         self.dtype = np.float32
         self.log = log
@@ -46,28 +46,50 @@ class SRP(object):
         if cache:
             # This is the actual hash.
             self._hash_dict = dict()
+            self._last_hash_dict = dict()
+
+        self.build_lookup_table()
 
     def _cache_size(self):
         return len(self._hash_dict)
 
-    def _expand_hexstring(self, hexstring):
-
-        h = bytes.fromhex(hexstring)
-
-        ints = np.frombuffer(h, np.uint8)
-        value = np.unpackbits(ints).astype(np.int8)
-        return (value*2-1)[:self.dim]
+    def build_lookup_table(self):
+        """
+        A table mapping four digit hexadecimal numbers
+        to 16-bit SRP vectors in 1, -1 space.
+        """
+        lookup = np.zeros((2**16, 16), np.float32)
+        for i in range(2**16):
+#            str_rep = f"{i:04x}"
+#            h = bytes.fromhex(str_rep)
+#            ints = np.frombuffer(h, np.uint8)
+            bits = np.array([i], np.uint16)
+            value = np.unpackbits(bits.view(np.uint8)).astype(np.int8)
+            lookup[i] = value * 2 - 1
+        self.lookup_table = lookup
 
     def string_to_binary(self, string):
         expand = np.ceil(self.dim / 160).astype('i8')
+        full_hash = b""
+        for i in range(0, expand):
+            seedword = string + "_" * i
+            try:
+                full_hash += hashlib.sha1(seedword.encode("utf-8")).digest()
+            except UnicodeDecodeError:
+                full_hash += hashlib.sha1(seedword).digest()
+        as_keys = np.frombuffer(full_hash, np.uint16)
+        return self.lookup_table[as_keys].flatten()[:self.dim]
+
+    def old_string_to_binary(self, string):
+        expand = np.ceil(self.dim / 160).astype('i8')
         full_hash = ""
-        for i in range(0,expand):
-            seedword = string + "_"*i
+        hash = np.float32()
+        for i in range(0, expand):
+            seedword = string + "_" * i
             try:
                 full_hash += hashlib.sha1(seedword.encode("utf-8")).hexdigest()
             except UnicodeDecodeError:
                 full_hash += hashlib.sha1(seedword).hexdigest()
-
         return self._expand_hexstring(full_hash)
 
     def hash_string(self, string, cache=None):
@@ -88,8 +110,13 @@ class SRP(object):
             try:
                 return self._hash_dict[string]
             except KeyError:
-                if cache is None:
-                    cache = True
+                try:
+                    # Check the previous cache.
+                    self._hash_dict[string] = self._last_hash_dict[string]
+                    return self._hash_dict[string]
+                except KeyError:
+                    if cache is None:
+                        cache = True
         else:
             cache = False
 
@@ -97,6 +124,7 @@ class SRP(object):
 
         if cache and self._cache_size() >= self.cache_limit:
             # Clear the cache; maybe things have changed.
+            self._hash_dict = self._last_hash_dict
             self._hash_dict = {}
 
         if cache and self._cache_size() < self.cache_limit:
@@ -175,10 +203,13 @@ class SRP(object):
                          unit_length = True
         ):
         """
-
+        words: either a list of words, or a single string.
         counts: the number of occurrences for each word in 'words'. This can be "none",
                 in which 'words' is treated as a string.
-
+        log: Apply a log-transform to avoid common words dominating the signature?
+        standardize: Apply standard minimal tokenization rules?
+        unit_length: normalize each vector to unit length to speed up
+                     subsequent calculations on cosine distance?
         """
 
         if log is None:
@@ -192,11 +223,11 @@ class SRP(object):
         scores = np.zeros((len(words), self.dim), dtype = np.float32)
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
-
         try:
-            values = np.average(scores, weights=counts, axis=0)
-            if unit_length == False:
-                values = values * sum(counts)
+#            values = np.average(scores, weights=counts, axis=0)
+            values = counts @ scores
+#            if unit_length == False:
+#                values = values * sum(counts)
         except ZeroDivisionError:
             if sum(counts) == 0:
                 raise EmptyTextError
@@ -224,4 +255,3 @@ if __name__=="__main__":
     print(model.stable_transform(u"Güten Tag".encode("utf-8").decode("utf-8"))[:6])
     model = SRP(320)
     print(model.stable_transform(u"Güten Tag".encode("utf-8"))[:6])
-    #print model.stable_transform(["hello", "world"],[1,1])[:6]
