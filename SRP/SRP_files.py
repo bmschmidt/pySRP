@@ -8,19 +8,14 @@ import regex as re
 import re as original_re
 from collections import defaultdict
 from pathlib import Path
+from warnings import warn
+
 
 regex_type = type(re.compile("."))
 original_regex_type = type(original_re.compile("."))
 from sqlitedict import SqliteDict
 
-if sys.version_info[0] == 3:
-    (py2, py3) = False, True
-    from collections.abc import MutableSequence
-else:
-    (py2, py3) = True, False
-    from collections import MutableSequence
-    # Kludgy
-    FileNotFoundError = IOError
+from collections.abc import MutableSequence
 
 def textset_yielder(inputfile):
     for line in open(inputfile, "r"):
@@ -82,6 +77,348 @@ def textset_to_srp(
 
     output.close()
 
+import pyarrow as pa
+from pyarrow import ipc
+from pyarrow import feather
+
+class Arrow_File(object):
+    """
+    Store in an arrow file.
+    """
+
+    def __init__(self, filename, dims=float("Inf"), mode="r", max_rows=float("Inf"), precision = "float", offset_cache = False):
+        """
+        Creates an SRP object.
+
+        filename: The location on disk.
+        dims: The number of vectors to store for each document. Typically ~100 to ~1000.
+              Need not be specified if working with an existing file.
+        mode: One of: 'r' (read an existing file); 'w' (create a new file); 'a' (append to the
+              end of an existing file)
+        max_rows: clip the document to a fixed length. Best left unused.
+        precision: bytes to use for each. 4 (single-precision) is standard; 2 (half precision) is also reasonable. 0 embeds not as floats, but instead into binary hamming space.
+        offset_cache: Whether to store the byte offset lookup information for vectors. By default,
+            this is False, which means the offset table is built on load and kept in memory.
+        """
+
+        self.filename = filename
+        self.dims = dims
+        self.mode = mode
+        self.max_rows = max_rows
+        if precision == 2:
+            precision = "half"
+        elif precision == 4:
+            precision = "float"
+        try:
+            assert precision in {"half", "float", "binary"}
+        except:
+            e = "Only `4` (single) and `2` (half) bytes are valid options for `precision`"
+            raise ValueError(e)
+        self.precision = precision
+        if self.precision == "half":
+            self.float_format = '<f2'
+        elif self.precision == "float":
+            self.float_format = '<f4'
+        else:
+            try:
+                assert self.dims % 8 == 0
+            except:
+                raise ValueError("Binary packing must have dimensionality divisible by 8.")
+            self.float_format = '<u1'
+        self.offset_cache = offset_cache
+        if self.offset_cache and os.path.exists(self.filename + '.offset.db'):
+            if (self.mode == 'w'):
+                # Leave _build_offset_lookup to build the reference
+                os.remove(self.filename + '.db')
+            else:
+                if os.path.exists(self.filename + '.offset.db'):
+                    self._offset_lookup = SqliteDict(self.filename + '.offset.db',
+                                                     flag=('c' if self.mode=='a' else 'r'),
+                                                     encode=int, decode=int)
+                if os.path.exists(self.filename + '.prefix.db'):
+                    self._prefix_lookup = SqliteDict(self.filename + '.prefix.db',
+                                                     flag=('c' if self.mode=='a' else 'r'))
+                else:
+                     print("No file", self.filename + '.prefix.db')
+        if self.mode == "r":
+            self._open_for_reading()
+        elif self.mode == "w":
+            self._open_for_writing()
+        elif self.mode == "a":
+            self._open_for_appending()
+        else:
+            raise NameError("Mode must be 'r', 'w', or 'a'.")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def concatenate_file(self, filename):
+        """
+        Adds all record in a different file to the end of this one.
+        Useful if creation of files has been parallelized or distributed.
+
+        In theory, it should be possible to add a large file to a smaller one.
+        """
+
+        with Vector_file(filename, dims=self.dims, mode="r", precision = self.precision) as new_file:
+            for (id, array) in new_file:
+                self.add_row(id, array)
+
+    def _open_for_writing(self):
+        dtype = pa.list_(pa.float32(), self.dims)
+        if self.precision == "half":
+            dtype = pa.list_(pa.float16(), self.dims)
+        if self.precision == "binary":
+            dtype = pa.binary(self.dims // 8)
+        self.dtype = dtype
+        self.schema = pa.schema({
+            '@id': pa.string(),
+            'vector': dtype
+        })
+        self.file = ipc.new_file(self.filename, self.schema)
+        self._BATCH_SIZE = 1024
+        self.embedding_buffer = []
+        self.name_buffer = []
+
+    def _open_for_reading(self):
+        self.tb = feather.read_table(self.filename)
+
+    def _open_for_appending(self):
+        raise NotImplementedError("Appending to Arrow files not supported.")
+
+    def batch_yielder(self, size = 100, unit_length = True):
+        """
+        Efficiently yield chunks of the representation as a matrix.
+
+        size: the number of rows in the matrix.
+        unit_length: whether to convert each row to unit length before
+                     yielding.
+        """
+        raise NotImplementedError("But it would be so easy!")
+        matrix = np.zeros((size, self.dims), np.float32)
+        labels = [None] * size
+        for i, (id, row) in enumerate(self):
+            j = i % size
+            labels[j] = id
+            if unit_length:
+                row = row/np.linalg.norm(row)
+            matrix[j] = row
+
+            if j == size - 1:
+                yield (labels, matrix)
+                labels = [None] * size
+        # final yield
+        if j != size - 1:
+            yield (labels[:j], matrix[:j])
+
+    def to_matrix(self, unit_length=False, clean=False):
+        """
+        Returns the entire file as a matrix with names (wrapped in a dict).
+
+        This can, obviously, overflow memory on a large file.
+        """
+        raise NotImplementedError("But it would be so easy!")
+
+        labels = []
+        matrix = np.zeros(
+            (min([self.vocab_size, self.max_rows]), self.dims), "<f4")
+        for i, (id, row) in enumerate(self):
+            labels.append(id)
+            if unit_length:
+                row = row/np.linalg.norm(row)
+            matrix[i] = row
+        return {"names": labels, "matrix": matrix}
+
+    def flush(self):
+        batch = pa.RecordBatch.from_arrays(
+            [pa.array(self.name_buffer, pa.string()), pa.array(self.embedding_buffer, self.dtype)],
+            schema = self.schema
+        )
+        self.file.write_batch(batch)
+        self.name_buffer = []
+        self.embedding_buffer = []
+
+    def add_rows(self, rows):
+        """
+        Batch add a list of (id, array) tuples while ensuring
+        that all will be in the same batch in the arrow file.
+        """
+        for row in rows[:-1]:
+            self.add_row(*row, flush_check = False)
+        
+        self.add_row(*rows[-1], flush_check = True)
+
+    def add_row(self, identifier, array, flush_check = True):
+        """
+        Add a new document/word/whatever to the matrix.
+        """
+
+        if type(array) != np.ndarray:
+            raise TypeError("Must pass a numpy ndarray as array")
+
+        if array.dtype != np.dtype(self.float_format):
+            if (array.dtype == np.dtype("<f4")) and self.precision == "half":
+                array = array.astype(self.float_format)
+            elif (array.dtype == np.dtype("<f4")) and self.precision == "binary":
+                array = np.packbits(array > 0)
+            else:
+                raise TypeError("Numpy array must be of type '<f4'")
+        if len(array) != self.dims:
+            if not (len(array) == self.dims / 8 and self.precision == "binary"):
+                raise IndexError(f"The existing files is {self.dims} dimensions: unable to append with {len(array)} dimensions as requested")
+
+        self.name_buffer.append(identifier)
+        self.embedding_buffer.append(array)
+
+        if flush_check and len(self.name_buffer) >= self._BATCH_SIZE:
+            self.flush()
+
+        try:
+            self._prefix_lookup[identifier.split(self.sep, 1)[0]].append((identifier, self.file.tell()))
+        except AttributeError:
+            pass
+        try:
+            self._offset_lookup[identifier] = self.file.tell()
+        except AttributeError:
+            pass
+
+    def close(self):
+        """
+        Close the file. It's extremely important to call this method in write modes:
+        not just that the last few files will be missing.
+        If it isn't, the header will have out-of-date information and files won't be read.
+        """
+        self.flush()
+        self.file.close()
+
+        if self.offset_cache:
+            self._offset_lookup.close()
+
+    def _regex_search(self, regex):
+
+        self._build_offset_lookup()
+        values = [(i, k) for k, i in self._offset_lookup.items() if re.search(regex, k)]
+        # Sort to ensure values are returned in disk order.
+        values.sort()
+        for i, k in values:
+            yield (k, self[k])
+
+
+        self._build_offset_lookup()
+        values = [(i, k) for k, i in self._offset_lookup.items() if re.search(regex, k)]
+        # Sort to ensure values are returned in disk order.
+        values.sort()
+        for i, k in values:
+            yield (k, self[k])
+
+    def __getitem__(self, label):
+        """
+        Attributes can be accessed in three ways.
+
+
+        With a string: this returns just the vector for that string.
+        With a list of strings: this returns a multidimensional array for each query passed.
+          If any of the requested items do not exist, this will fail.
+        With a single *compiled* regular expression (from either the regex or re module). This
+          will return an iterator over key, value pairs of keys that match the regex.
+        """
+
+        self._build_offset_lookup()
+
+        if self.mode == 'a' or self.mode == 'w':
+            self.file.flush()
+
+        if isinstance(label, original_regex_type):
+            # Convert from re type since that's
+            # more standard
+            label = re.compile(label.pattern)
+
+        if isinstance(label, regex_type):
+            return self._regex_search(label)
+
+        if isinstance(label, original_regex_type):
+            label = re.compile(label.pattern)
+
+        if isinstance(label, regex_type):
+            return self._regex_search(label)
+
+        if isinstance(label, MutableSequence):
+            is_iterable = True
+        else:
+            is_iterable = False
+            label = [label]
+
+        vecs = []
+        # Will fail on any missing labels
+
+        # Prefill and sort so that any block are done in disk-order.
+        # This may make a big difference if you're on a tape drive!
+
+        vecs = np.zeros((len(label), self.vector_size), '<f4')
+        elements = [(self._offset_lookup[l], i) for i, l in enumerate(label)]
+        elements.sort()
+
+        for offset, i in elements:
+            self.file.seek(offset)
+            vecs[i] = self._read_binary_row()
+
+        # Move pointer to the end in case we're writing.
+        self.file.seek(0, 2)
+
+        if is_iterable:
+            return np.stack(vecs)
+        else:
+            return vecs[0]
+
+    def find_prefix(self, prefix, sep = "-"):
+        """
+        Uses as an on-disk loca okup to return all rows where the text before 'sep' is equal
+        to prefix.
+
+        Once used with a prefix, you **cannot** change the prefix on the file.
+        """
+
+        if self.mode=='a' or self.mode == 'w':
+            self.file.flush()
+
+        try:
+            # You're locked in.
+            assert(sep == self._prefix_sep)
+        except AttributeError:
+            self._prefix_sep = sep
+
+        self._build_offset_lookup(sep = sep)
+
+        # Will fail on any missing labels
+
+        # Prefill and sort so that any block are done in disk-order.
+        # This may make a big difference if you're on a tape drive!
+
+        elements = self._prefix_lookup[prefix]
+
+        output = []
+
+        for full_name, offset in elements:
+            self.file.seek(offset)
+            output.append((full_name, self._read_binary_row()))
+
+        # Move pointer to the end in case we're writing.
+        self.file.seek(0, 2)
+
+        return output
+
+    def __iter__(self):
+        """
+        Again, I'm starting with a version of the gensim code.
+        https://github.com/piskvorky/gensim/blob/develop/gensim/models/word2vec.py
+        """
+
+        for key, value in zip(self.tb['@id'], self.tb['vector']):
+            yield key.as_py(), value.values.to_numpy()
+
 class Vector_file(object):
     """
     A class to manage binary files in the word2vec format.
@@ -124,6 +461,7 @@ class Vector_file(object):
         offset_cache: Whether to store the byte offset lookup information for vectors. By default,
             this is False, which means the offset table is built on load and kept in memory.
         """
+        warn('The word2vec-based binary format is deprecated: use Apache Arrow instead.', DeprecationWarning, stacklevel=2)
 
         self.filename = filename
         self.dims = dims

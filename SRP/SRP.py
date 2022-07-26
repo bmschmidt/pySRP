@@ -8,7 +8,7 @@ import sys
 import base64
 from collections import Counter
 
-tokenregex = regex.compile(u"\w+")
+tokenregex = regex.compile(u"[\p{L}\p{Pc}\p{N}\p{M}]+")
 
 class EmptyTextError(ZeroDivisionError):
     pass
@@ -159,15 +159,15 @@ class SRP(object):
             by passing words = [string], counts=[1]
             """
             subCounts = self.tokenize(words[i])
-            for (part,partCounts) in subCounts.items():
-                part = regex.sub(u'\d',"#",part)
-                addition = counts[i]*partCounts
+            for (part, partCounts) in subCounts.items():
+                part = regex.sub(u'\d', "#", part)
+                addition = counts[i] * partCounts
                 try:
                     full[part] += addition
                 except KeyError:
                     full[part] = addition
         words = []
-        counts = np.zeros(len(full),"<f4")
+        counts = np.zeros(len(full), "<f4")
         if not unzip:
             return full
         for i,(k,v) in enumerate(full.items()):
@@ -224,10 +224,7 @@ class SRP(object):
         for i, word in enumerate(words):
             scores[i] = self.hash_string(word)
         try:
-#            values = np.average(scores, weights=counts, axis=0)
             values = counts @ scores
-#            if unit_length == False:
-#                values = values * sum(counts)
         except ZeroDivisionError:
             if sum(counts) == 0:
                 raise EmptyTextError

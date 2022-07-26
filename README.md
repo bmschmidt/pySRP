@@ -1,7 +1,7 @@
 # pySRP
 
 Python module implementing Stable Random Projections, as described in 
-[Cultural Analytics Vol. 1, Issue 2, 2018 October 04, 2018 EDT: Stable Random Projection: Lightweight, General-Purpose Dimensionality Reduction for Digitized Libraries](https://doi.org/10.22148/16.025)
+[Cultural Analytics Vol. 1, Issue 2, 2018 October 04, 2018: Stable Random Projection: Lightweight, General-Purpose Dimensionality Reduction for Digitized Libraries](https://doi.org/10.22148/16.025)
 
 These create interchangeable, data-agnostic vectorized representations of text suitable for a variety of contexts. Unlike most vectorizations, they are suitable for representing texts in any language that uses space-tokenization, or non-linguistic content, since they contain no implicit language model besides words.
 
@@ -15,6 +15,13 @@ Requires python 3
 ```bash
 pip install pysrp
 ```
+## Changelog
+
+**Version 2.0 (July 2022) slightly changes the default tokenization algorithm!**
+
+Previously it was `\w`; now it is `[\p{L}\p{Pc}\p{N}\p{M}]+`. 
+
+I also no longer recommend use 
 
 ## Usage
 

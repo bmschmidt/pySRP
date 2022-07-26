@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(name='pysrp',
       packages=["SRP"],
-      version='1.1.0',
+      version='2.0.0',
       description="Run stable random projections.",
       long_description = long_description,
       long_description_content_type = "text/markdown",
@@ -14,7 +14,6 @@ setup(name='pysrp',
       author_email="bmschmidt@gmail.com",
       license="MIT",
       classifiers=[
-        'Development Status :: 4 - Beta',
         'Intended Audience :: Education',
         "Natural Language :: English",
         # Pick your license as you wish (should match "license" above)
@@ -26,6 +25,7 @@ setup(name='pysrp',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',          
         'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
         "Topic :: Text Processing :: Indexing",
         "Topic :: Text Processing :: Linguistic"
         ],
