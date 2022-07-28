@@ -461,7 +461,8 @@ class Vector_file(object):
         offset_cache: Whether to store the byte offset lookup information for vectors. By default,
             this is False, which means the offset table is built on load and kept in memory.
         """
-        warn('The word2vec-based binary format is deprecated: use Apache Arrow instead.', DeprecationWarning, stacklevel=2)
+        warn('The word2vec-based binary format is deprecated and will be '
+             'removed in version 2.1: use Apache Arrow instead.', DeprecationWarning, stacklevel=2)
 
         self.filename = filename
         self.dims = dims
