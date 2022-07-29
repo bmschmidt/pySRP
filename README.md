@@ -43,9 +43,9 @@ Use the SRP class to build an object to perform transformations.
 This is a class method, rather than a function, which builds a cache of previously seen words.
 
 ```python
-import SRP
+import srp
 # initialize with desired number of dimensions
-hasher = SRP.SRP(640)
+hasher = srp.SRP(640)
 ```
 
 The most important method is 'stable_transform'.
@@ -67,6 +67,10 @@ hasher.stable_transform(words = ["foo","bar"],counts = [1,2])
 
 SRP files are stored in a binary file format to save space. 
 This format is the same used by the binary word2vec format.
+
+**DEPRECATION NOTICE**
+
+This format is now deprecated--I recommend the Apache Arrow binary serialization format instead. 
 
 ```python
 file = SRP.Vector_file("hathivectors.bin")
