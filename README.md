@@ -43,9 +43,9 @@ Use the SRP class to build an object to perform transformations.
 This is a class method, rather than a function, which builds a cache of previously seen words.
 
 ```python
-import srp
+import SRP
 # initialize with desired number of dimensions
-hasher = srp.SRP(640)
+hasher = SRP.SRP(640)
 ```
 
 The most important method is 'stable_transform'.
